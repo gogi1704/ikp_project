@@ -100,6 +100,40 @@ class AppTests(unittest.TestCase):
         self.assertEqual(calculate(p,s)['base'],29)
         self.assertEqual(calculate(p,s)['health'],22000)
 
+    def test_fixed_service_cannot_be_disabled_but_recommended_can(self):
+        status, row = self.call('/api/proposals','POST',{'company':'ООО «Тест»','lpr':'Иван Иванов','count':10})
+        self.assertEqual(status,200)
+        body = row['body']
+        body['corp']['manager']['fixed'] = True
+        body['health']['aiAssist']['recommended'] = True
+        status, saved = self.call('/api/proposals/'+row['id'],'PUT',{'body':body,'version':row['version']})
+        self.assertEqual(status,200)
+        self.assertTrue(saved['body']['corp']['manager']['fixed'])
+        self.assertTrue(saved['body']['health']['aiAssist']['recommended'])
+        status, link = self.call('/api/proposals/'+row['id']+'/publish','POST')
+        self.assertEqual(status,200)
+        endpoint = '/api/public/'+link['url'].split('/p/')[1]
+        view = self.call(endpoint,authenticated=False)[1]
+
+        fixed_disabled = view['selection']
+        fixed_disabled['corp']['manager']['on'] = False
+        status, result = self.call(endpoint+'/quote','POST',fixed_disabled,False)
+        self.assertEqual(status,400)
+        self.assertIn('нельзя отключить',result['error'])
+
+        recommended_disabled = self.call(endpoint,authenticated=False)[1]['selection']
+        recommended_disabled['health']['aiAssist']['on'] = False
+        self.assertEqual(self.call(endpoint+'/quote','POST',recommended_disabled,False)[0],200)
+
+    def test_only_one_enabled_service_can_be_recommended_or_fixed(self):
+        data = {'corp':{'manager':{'recommended':True},'delay':{'recommended':True}}}
+        with self.assertRaisesRegex(ValueError,'только одну услугу'):
+            proposal(data)
+        with self.assertRaisesRegex(ValueError,'только включённую услугу'):
+            proposal({'corp':{'manager':{'on':False,'fixed':True}}})
+        with self.assertRaisesRegex(ValueError,'только включённую услугу'):
+            proposal({'health':{'quiz':{'on':False,'recommended':True}}})
+
     def test_login_rate_limit(self):
         for _ in range(9):self.call('/api/login','POST',{'login':'bad','password':'bad'})
         self.assertEqual(self.call('/api/login','POST',{'login':'bad','password':'bad'})[0],429)

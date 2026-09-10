@@ -56,11 +56,25 @@ def proposal(data, publish=False):
     p['count'] = integer(data.get('count', 1), 1)
     p['basePrice'] = money(data.get('basePrice', 2500)) / 100
     p['mopPhoto'] = image_data(data.get('mopPhoto', ''))
+    recommended_count = 0
     for group, catalog in [('corp', CORP), ('health', HEALTH)]:
         p[group] = {}
         for code, _, price in catalog:
             item = data.get(group, {}).get(code, {})
-            p[group][code] = {'on': boolean(item.get('on', True)), 'price': money(item.get('price', price)) / 100}
+            on = boolean(item.get('on', True))
+            fixed = boolean(item.get('fixed', False))
+            recommended = boolean(item.get('recommended', False))
+            if (fixed or recommended) and not on:
+                raise ValueError('Фиксировать и рекомендовать можно только включённую услугу')
+            recommended_count += int(recommended)
+            p[group][code] = {
+                'on': on,
+                'price': money(item.get('price', price)) / 100,
+                'fixed': fixed,
+                'recommended': recommended,
+            }
+    if recommended_count > 1:
+        raise ValueError('Рекомендованной можно отметить только одну услугу')
     if publish and (not p['company'] or not p['lpr']):
         raise ValueError('Укажите предприятие и ФИО руководителя')
     return p
@@ -76,6 +90,8 @@ def selection(p, data=None):
             on = boolean(item.get('on', offered if group != 'addons' else False))
             if on and not offered:
                 raise ValueError('Услуга отсутствует в предложении')
+            if group != 'addons' and p[group][code].get('fixed', False) and not on:
+                raise ValueError('Зафиксированную менеджером услугу нельзя отключить')
             qty = integer(item.get('qty', 2 if code == 'liverKidney' else s['count']))
             if group == 'addons' and qty > s['count']:
                 raise ValueError('Количество услуг не может превышать число сотрудников')
