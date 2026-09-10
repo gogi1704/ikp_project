@@ -1,8 +1,14 @@
 .venv/
+.idea/
 __pycache__/
 *.pyc
 .env*
 !.env.example
 !.env.production.example
 data/
+backups/
+dist/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 *.log
