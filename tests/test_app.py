@@ -86,6 +86,22 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.call('/api/proposals/'+p['id']+'/revoke','POST',{'id':lid})[0],200)
         self.assertEqual(self.call('/api/public/'+token,authenticated=False)[0],410)
 
+    def test_public_link_contains_inn_or_company_slug_and_keeps_secret(self):
+        status, with_inn = self.call('/api/proposals','POST',{'company':'ООО «Ромашка»','inn':'7707083893','lpr':'Иван Иванов'})
+        self.assertEqual(status,200)
+        inn_url = self.call('/api/proposals/'+with_inn['id']+'/publish','POST')[1]['url']
+        inn_token = inn_url.split('/p/')[1]
+        self.assertTrue(inn_token.startswith('7707083893-'))
+        self.assertGreaterEqual(len(inn_token.removeprefix('7707083893-')),40)
+        self.assertEqual(self.call('/api/public/'+inn_token,authenticated=False)[0],200)
+
+        status, without_inn = self.call('/api/proposals','POST',{'company':'ООО «Ромашка»','lpr':'Пётр Петров'})
+        self.assertEqual(status,200)
+        company_url = self.call('/api/proposals/'+without_inn['id']+'/publish','POST')[1]['url']
+        company_token = company_url.split('/p/')[1]
+        self.assertTrue(company_token.startswith('ooo-romashka-'))
+        self.assertEqual(self.call('/api/public/'+company_token,authenticated=False)[0],200)
+
     def test_validation_and_price_integrity(self):
         for value in [-1,1.5,True,100001]:
             self.assertEqual(self.call('/api/proposals','POST',{'count':value})[0],400)

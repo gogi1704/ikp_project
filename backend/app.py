@@ -14,6 +14,17 @@ from backend.domain import proposal, selection, calculate, manager_profile
 
 ROOT = Path(__file__).resolve().parent.parent
 
+CYRILLIC_SLUG = str.maketrans({
+    'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'y',
+    'к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f',
+    'х':'h','ц':'ts','ч':'ch','ш':'sh','щ':'sch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya',
+})
+
+def public_link_slug(p):
+    source = p.get('inn') or p.get('company', '')
+    slug = re.sub(r'[^a-z0-9]+', '-', source.lower().translate(CYRILLIC_SLUG)).strip('-')[:48]
+    return slug or 'proposal'
+
 def load_dotenv(path):
     """Load a small .env file without replacing real process environment values."""
     if not path.is_file():
@@ -361,7 +372,8 @@ def route(env):
                     return {'links':links,'submissions':subs}, []
                 if method == 'POST' and len(parts) == 5 and parts[4] == 'publish':
                     p = proposal(json.loads(row['body']),True)
-                    token, lid = secrets.token_urlsafe(32),secrets.token_hex(16)
+                    token = public_link_slug(p) + '-' + secrets.token_urlsafe(32)
+                    lid = secrets.token_hex(16)
                     db.execute('INSERT INTO links(id,proposal_id,token,snapshot,expires,created) VALUES(?,?,?,?,?,?)',(lid,pid,digest(token),json.dumps(p),0,now))
                     audit(db,uid,'published',pid)
                     return {'url':ORIGIN+'/p/'+token}, []
