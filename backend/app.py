@@ -79,10 +79,10 @@ def init_db():
         columns = {r['name'] for r in db.execute('PRAGMA table_info(users)')}
         if 'email' in columns and 'login' not in columns:
             db.execute('ALTER TABLE users RENAME COLUMN email TO login')
-        for name, definition in [('role', "TEXT NOT NULL DEFAULT 'manager'"), ('active', 'INTEGER NOT NULL DEFAULT 1'), ('can_edit', 'INTEGER NOT NULL DEFAULT 1'), ('can_publish', 'INTEGER NOT NULL DEFAULT 1'), ('first_name', "TEXT NOT NULL DEFAULT ''"), ('last_name', "TEXT NOT NULL DEFAULT ''"), ('phone', "TEXT NOT NULL DEFAULT ''"), ('messenger_phone', "TEXT NOT NULL DEFAULT ''"), ('photo', "TEXT NOT NULL DEFAULT ''")]:
+        for name, definition in [('role', "TEXT NOT NULL DEFAULT 'manager'"), ('active', 'INTEGER NOT NULL DEFAULT 1'), ('can_edit', 'INTEGER NOT NULL DEFAULT 1'), ('can_publish', 'INTEGER NOT NULL DEFAULT 1'), ('first_name', "TEXT NOT NULL DEFAULT ''"), ('last_name', "TEXT NOT NULL DEFAULT ''"), ('phone', "TEXT NOT NULL DEFAULT ''"), ('messenger_phone', "TEXT NOT NULL DEFAULT ''"), ('photo', "TEXT NOT NULL DEFAULT ''"), ('messengers', "TEXT NOT NULL DEFAULT '[]'")]:
             if name not in columns:
                 db.execute(f'ALTER TABLE users ADD COLUMN {name} {definition}')
-        db.execute('PRAGMA user_version=4')
+        db.execute('PRAGMA user_version=5')
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -105,7 +105,7 @@ def insert_user(db, login, password, role='manager', can_edit=True, can_publish=
     salt = secrets.token_hex(16)
     profile = manager_profile(profile or {})
     try:
-        db.execute('INSERT INTO users(id,login,salt,password,role,can_edit,can_publish,first_name,last_name,phone,messenger_phone,photo) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', (uid, login, salt, password_hash(password, salt), role, int(can_edit), int(can_publish), profile['firstName'], profile['lastName'], profile['phone'], profile['messengerPhone'], profile['photo']))
+        db.execute('INSERT INTO users(id,login,salt,password,role,can_edit,can_publish,first_name,last_name,phone,messenger_phone,photo,messengers) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)', (uid, login, salt, password_hash(password, salt), role, int(can_edit), int(can_publish), profile['firstName'], profile['lastName'], profile['phone'], profile['messengerPhone'], profile['photo'], json.dumps(profile['messengers'], ensure_ascii=False)))
     except sqlite3.IntegrityError:
         raise Error(409, 'Пользователь с таким логином уже существует')
     return uid
@@ -121,7 +121,16 @@ def permissions(data):
     return values
 
 def identity(row):
-    return {'login':row['login'], 'csrf':row['csrf'], 'role':row['role'], 'can_edit':bool(row['can_edit']), 'can_publish':bool(row['can_publish']), 'profile':{'firstName':row['first_name'], 'lastName':row['last_name'], 'phone':row['phone'], 'messengerPhone':row['messenger_phone'], 'photo':row['photo']}}
+    return {'login':row['login'], 'csrf':row['csrf'], 'role':row['role'], 'can_edit':bool(row['can_edit']), 'can_publish':bool(row['can_publish']), 'profile':profile_from_row(row)}
+
+def profile_from_row(row):
+    try:
+        messengers = json.loads(row['messengers'] or '[]')
+        if not isinstance(messengers, list):
+            messengers = []
+    except (json.JSONDecodeError, TypeError):
+        messengers = []
+    return {'firstName':row['first_name'], 'lastName':row['last_name'], 'phone':row['phone'], 'messengerPhone':row['messenger_phone'], 'photo':row['photo'], 'messengers':messengers}
 
 class Error(Exception):
     def __init__(self, status, message):
@@ -246,7 +255,7 @@ def route(env):
             cookie = SimpleCookie()
             cookie.load(env.get('HTTP_COOKIE',''))
             token = cookie.get('ikp_session')
-            session = db.execute('SELECT s.*,u.login,u.role,u.can_edit,u.can_publish,u.first_name,u.last_name,u.phone,u.messenger_phone,u.photo FROM sessions s JOIN users u ON u.id=s.user_id WHERE token=? AND expires>? AND u.active=1', (digest(token.value) if token else '',now)).fetchone()
+            session = db.execute('SELECT s.*,u.login,u.role,u.can_edit,u.can_publish,u.first_name,u.last_name,u.phone,u.messenger_phone,u.photo,u.messengers FROM sessions s JOIN users u ON u.id=s.user_id WHERE token=? AND expires>? AND u.active=1', (digest(token.value) if token else '',now)).fetchone()
             if not session:
                 raise Error(401,'Войдите в панель менеджера')
             uid = session['user_id']
@@ -257,11 +266,21 @@ def route(env):
             if path == '/api/logout' and method == 'POST':
                 db.execute('DELETE FROM sessions WHERE token=?',(session['token'],))
                 return {}, [('Set-Cookie','ikp_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')]
+            if path == '/api/profile' and method == 'PUT':
+                if session['role'] != 'manager':
+                    raise Error(403, 'Профиль доступен только менеджеру')
+                profile = manager_profile(data.get('profile', {}))
+                db.execute('UPDATE users SET first_name=?,last_name=?,phone=?,messenger_phone=?,photo=?,messengers=? WHERE id=?', (profile['firstName'],profile['lastName'],profile['phone'],profile['messengerPhone'],profile['photo'],json.dumps(profile['messengers'], ensure_ascii=False),uid))
+                audit(db, uid, 'profile_updated', uid)
+                return {'profile':profile}, []
             if path.startswith('/api/admin/'):
                 if session['role'] != 'admin':
                     raise Error(403, 'Доступ только для администратора')
                 if path == '/api/admin/managers' and method == 'GET':
-                    return [dict(r) for r in db.execute("SELECT id,login,active,can_edit,can_publish,first_name AS firstName,last_name AS lastName,phone,messenger_phone AS messengerPhone,photo FROM users WHERE role='manager' ORDER BY login")], []
+                    managers = []
+                    for row in db.execute("SELECT * FROM users WHERE role='manager' ORDER BY login"):
+                        managers.append({'id':row['id'],'login':row['login'],'active':row['active'],'can_edit':row['can_edit'],'can_publish':row['can_publish']} | profile_from_row(row))
+                    return managers, []
                 if path == '/api/admin/managers' and method == 'POST':
                     active, can_edit, can_publish = permissions(data)
                     target = insert_user(db, data.get('login'), data.get('password'), can_edit=can_edit, can_publish=can_publish, profile=data.get('profile'))
@@ -282,7 +301,7 @@ def route(env):
                         return {'id':target,'active':active,'can_edit':can_edit,'can_publish':can_publish}, []
                     if method == 'PUT' and len(parts) == 6 and parts[5] == 'profile':
                         profile = manager_profile(data.get('profile', {}))
-                        db.execute('UPDATE users SET first_name=?,last_name=?,phone=?,messenger_phone=?,photo=? WHERE id=?', (profile['firstName'],profile['lastName'],profile['phone'],profile['messengerPhone'],profile['photo'],target))
+                        db.execute('UPDATE users SET first_name=?,last_name=?,phone=?,messenger_phone=?,photo=?,messengers=? WHERE id=?', (profile['firstName'],profile['lastName'],profile['phone'],profile['messengerPhone'],profile['photo'],json.dumps(profile['messengers'], ensure_ascii=False),target))
                         audit(db, uid, 'manager_profile_updated', target)
                         return {'id':target,'profile':profile}, []
                     if method == 'DELETE' and len(parts) == 5:
@@ -341,6 +360,7 @@ def route(env):
                 p['mopPhone'] = session['phone']
                 p['mopMessengerPhone'] = session['messenger_phone']
                 p['mopPhoto'] = session['photo']
+                p['mopMessengers'] = profile_from_row(session)['messengers']
                 db.execute('INSERT INTO proposals VALUES(?,?,?,1,?,?)',(pid,uid,json.dumps(p),now,now))
                 audit(db,uid,'created',pid)
                 return {'id':pid,'version':1,'body':p}, []

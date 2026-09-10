@@ -23,3 +23,16 @@ export function totals(p,s,catalog){
 }
 export function sumHtml(t,n){ return `<div class="sum-row"><span>Медицинский осмотр</span><b>${rub(t.base)}</b></div><div class="sum-row"><span>Дополнительные исследования</span><b>${rub(t.addons)}</b></div><div class="sum-row"><span>Корпоративные преимущества</span><b>${rub(t.corp)}</b></div><div class="sum-row"><span>Здоровье сотрудников</span><b>${rub(t.health)}</b></div><div class="grand"><span>Итого по предложению</span><strong>${rub(t.total)}</strong><small>${rub(t.total/n)} / сотрудника</small></div>`; }
 export function optionDetails(o){return o.spoiler?`<p class="option-description">${esc(o.spoiler)}</p>`:'';}
+const messengerTypes=[['telegram','Telegram'],['whatsapp','WhatsApp'],['max','MAX'],['other','Другая ссылка']];
+function messengerRow(item={type:'telegram',value:''}){return `<div class="messenger-edit-row"><select aria-label="Мессенджер">${messengerTypes.map(([value,label])=>`<option value="${value}" ${item.type===value?'selected':''}>${label}</option>`).join('')}</select><input type="text" value="${esc(item.value||'')}" maxlength="300" placeholder="@имя, номер или ссылка" aria-label="Аккаунт или ссылка"><button type="button" class="messenger-remove" aria-label="Удалить мессенджер">×</button></div>`;}
+export function messengerFields(items=[]){return `<div class="messenger-editor"><div class="messenger-list" data-messenger-list>${items.map(messengerRow).join('')}</div><button type="button" class="messenger-add">+ Добавить мессенджер</button><p class="muted small messenger-help">Telegram: @имя или t.me · WhatsApp: номер или wa.me · MAX: ссылка max.ru</p></div>`;}
+export function wireMessengerFields(root,onChange=()=>{}){
+  const editor=root.querySelector('.messenger-editor');if(!editor)return;
+  editor.addEventListener('click',event=>{
+    if(event.target.closest('.messenger-add')){if(editor.querySelectorAll('.messenger-edit-row').length>=8){notify('Можно добавить не более 8 аккаунтов');return;}editor.querySelector('[data-messenger-list]').insertAdjacentHTML('beforeend',messengerRow());onChange();}
+    if(event.target.closest('.messenger-remove')){event.target.closest('.messenger-edit-row').remove();onChange();}
+  });
+  editor.addEventListener('input',onChange);
+  editor.addEventListener('change',onChange);
+}
+export function readMessengerFields(root){return [...root.querySelectorAll('.messenger-edit-row')].map(row=>({type:row.querySelector('select').value,value:row.querySelector('input').value.trim()})).filter(item=>item.value);}

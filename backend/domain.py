@@ -1,6 +1,8 @@
 import base64
 import binascii
+import re
 from decimal import Decimal, InvalidOperation
+from urllib.parse import parse_qs, urlparse
 
 CORP = [('manager', 'Персональный менеджер', 0), ('delay', 'Отсрочка платежа', 0), ('monitor', 'Система мониторинга документооборота', 0), ('checkupPrice', 'Специальная цена на чек-апы во время медосмотра', 100)]
 HEALTH = [('quiz', '«Умное» анкетирование', 0), ('aiAssist', 'ИИ-ассистент «Здоровый сотрудник»', 20), ('selfBuy', 'Индивидуальная покупка чек-апов', 0), ('liverKidney', 'Чек-ап «Здоровье печени и почек»', 2500), ('onco', 'Онко-ассистанс', 200)]
@@ -47,7 +49,53 @@ def image_data(value):
 def manager_profile(data):
     profile = {k:string(data.get(k, ''), 150) for k in ('firstName','lastName','phone','messengerPhone')}
     profile['photo'] = image_data(data.get('photo', ''))
+    profile['messengers'] = messenger_accounts(data.get('messengers', []))
     return profile
+
+def messenger_accounts(value):
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > 8:
+        raise ValueError('Можно добавить не более 8 аккаунтов мессенджеров')
+    result = []
+    labels = {'telegram':'Telegram', 'whatsapp':'WhatsApp', 'max':'MAX', 'other':'Мессенджер'}
+    for raw in value:
+        if not isinstance(raw, dict):
+            raise ValueError('Некорректные данные мессенджера')
+        kind = string(raw.get('type', ''), 20).lower()
+        account = string(raw.get('value', ''), 300)
+        if kind not in labels or not account:
+            raise ValueError('Выберите мессенджер и укажите аккаунт')
+        if kind == 'telegram':
+            candidate = account.removeprefix('@')
+            if account.startswith(('http://', 'https://')):
+                parsed = urlparse(account)
+                if parsed.scheme != 'https' or parsed.hostname not in ('t.me', 'telegram.me') or not parsed.path.strip('/'):
+                    raise ValueError('Telegram: укажите @имя или ссылку t.me')
+                candidate = parsed.path.strip('/').split('/')[0]
+            if not re.fullmatch(r'[A-Za-z0-9_]{5,32}', candidate):
+                raise ValueError('Telegram: укажите корректное @имя или ссылку t.me')
+            url, display = f'https://t.me/{candidate}', '@' + candidate
+        elif kind == 'whatsapp':
+            if account.startswith(('http://', 'https://')):
+                parsed = urlparse(account)
+                if parsed.scheme != 'https' or parsed.hostname not in ('wa.me', 'api.whatsapp.com'):
+                    raise ValueError('WhatsApp: укажите номер или ссылку wa.me')
+                candidate = parse_qs(parsed.query).get('phone', [''])[0] if parsed.hostname == 'api.whatsapp.com' else parsed.path
+                digits = re.sub(r'\D', '', candidate)
+            else:
+                digits = re.sub(r'\D', '', account)
+            if not 10 <= len(digits) <= 15:
+                raise ValueError('WhatsApp: укажите полный номер в международном формате')
+            url, display = f'https://wa.me/{digits}', account
+        else:
+            parsed = urlparse(account if '://' in account else 'https://' + account)
+            allowed_hosts = ('max.ru', 'web.max.ru') if kind == 'max' else None
+            if parsed.scheme != 'https' or not parsed.hostname or (allowed_hosts and parsed.hostname not in allowed_hosts):
+                raise ValueError('MAX: вставьте ссылку профиля max.ru' if kind == 'max' else 'Укажите полную HTTPS-ссылку на аккаунт')
+            url, display = parsed.geturl(), account
+        result.append({'type':kind, 'label':labels[kind], 'value':display, 'url':url})
+    return result
 
 def proposal(data, publish=False):
     p = {k: string(data.get(k, '')) for k in ['company', 'inn', 'lpr', 'mopFirstName', 'mopLastName', 'mopPhone', 'mopMessengerPhone']}
@@ -56,6 +104,7 @@ def proposal(data, publish=False):
     p['count'] = integer(data.get('count', 1), 1)
     p['basePrice'] = money(data.get('basePrice', 2500)) / 100
     p['mopPhoto'] = image_data(data.get('mopPhoto', ''))
+    p['mopMessengers'] = messenger_accounts(data.get('mopMessengers', []))
     recommended_count = 0
     for group, catalog in [('corp', CORP), ('health', HEALTH)]:
         p[group] = {}

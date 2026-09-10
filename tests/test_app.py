@@ -251,11 +251,11 @@ class AppTests(unittest.TestCase):
             self.assertEqual(u['password'],'hash')
             self.assertEqual(u['login'],'old@example.test')
             self.assertEqual((u['role'],u['active'],u['can_edit'],u['can_publish']),('manager',1,1,1))
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],4)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],5)
 
     def test_manager_profile_is_copied_to_new_proposals(self):
         self.admin_login()
-        profile={'firstName':'Лариса','lastName':'Захарченко','phone':'+7 863 322-67-66','messengerPhone':'+7 989 506-74-60','photo':''}
+        profile={'firstName':'Лариса','lastName':'Захарченко','phone':'+7 863 322-67-66','messengerPhone':'+7 989 506-74-60','photo':'','messengers':[]}
         status, created=self.call('/api/admin/managers','POST',{'login':'profile_manager','password':'profile-password','profile':profile})
         self.assertEqual(status,200)
         managers=self.call('/api/admin/managers')[1]
@@ -270,11 +270,45 @@ class AppTests(unittest.TestCase):
         self.assertEqual(proposal_body['mopPhone'],'+7 863 322-67-66')
         self.assertEqual(proposal_body['mopMessengerPhone'],'+7 989 506-74-60')
 
+    def test_manager_edits_own_profile_and_messengers_are_copied_to_client(self):
+        requested = {
+            'firstName':'Мария','lastName':'Орлова','phone':'+7 900 100-20-30','messengerPhone':'', 'photo':'',
+            'messengers':[
+                {'type':'telegram','value':'@maria_manager'},
+                {'type':'whatsapp','value':'+7 (900) 100-20-30'},
+                {'type':'max','value':'https://max.ru/maria_manager'},
+            ],
+        }
+        status, result = self.call('/api/profile','PUT',{'profile':requested})
+        self.assertEqual(status,200)
+        saved = result['profile']
+        self.assertEqual(saved['messengers'][0]['url'],'https://t.me/maria_manager')
+        self.assertEqual(saved['messengers'][1]['url'],'https://wa.me/79001002030')
+        self.assertEqual(saved['messengers'][2]['url'],'https://max.ru/maria_manager')
+        self.assertEqual(self.call('/api/me')[1]['profile'],saved)
+
+        proposal_row = self.call('/api/proposals','POST',{'company':'ООО «Контакт»','lpr':'Иван Иванов'})[1]
+        self.assertEqual(proposal_row['body']['mopMessengers'],saved['messengers'])
+        link = self.call('/api/proposals/'+proposal_row['id']+'/publish','POST')[1]
+        public = self.call('/api/public/'+link['url'].split('/p/')[1],authenticated=False)[1]
+        self.assertEqual(public['proposal']['mopMessengers'],saved['messengers'])
+
+    def test_messenger_links_reject_unsafe_or_wrong_hosts(self):
+        base={'firstName':'','lastName':'','phone':'','messengerPhone':'','photo':''}
+        invalid=[
+            {'type':'telegram','value':'https://evil.test/user'},
+            {'type':'whatsapp','value':'javascript:alert(1)'},
+            {'type':'max','value':'https://evil.test/profile'},
+            {'type':'other','value':'http://example.test/profile'},
+        ]
+        for messenger in invalid:
+            self.assertEqual(self.call('/api/profile','PUT',{'profile':base|{'messengers':[messenger]}})[0],400)
+
     def test_admin_updates_and_preserves_manager_profile(self):
         self.admin_login()
         managers=self.call('/api/admin/managers')[1]
         user=next(item for item in managers if item['login']=='manager@example.test')
-        profile={'firstName':'Иван','lastName':'Иванов','phone':'+7 900 111-22-33','messengerPhone':'@ivanov','photo':''}
+        profile={'firstName':'Иван','lastName':'Иванов','phone':'+7 900 111-22-33','messengerPhone':'@ivanov','photo':'','messengers':[]}
         path='/api/admin/managers/'+user['id']
         status,result=self.call(path+'/profile','PUT',{'profile':profile})
         self.assertEqual(status,200)
@@ -290,7 +324,7 @@ class AppTests(unittest.TestCase):
         user=next(item for item in self.call('/api/admin/managers')[1] if item['login']=='manager@example.test')
         path='/api/admin/managers/'+user['id']
         self.call(path,'PUT',{'active':True,'can_edit':False,'can_publish':False})
-        profile={'firstName':'Анна','lastName':'Петрова','phone':'123','messengerPhone':'456','photo':''}
+        profile={'firstName':'Анна','lastName':'Петрова','phone':'123','messengerPhone':'456','photo':'','messengers':[]}
         self.assertEqual(self.call(path+'/profile','PUT',{'profile':profile})[0],200)
         saved=next(item for item in self.call('/api/admin/managers')[1] if item['id']==user['id'])
         self.assertEqual({key:saved[key] for key in profile},profile)
