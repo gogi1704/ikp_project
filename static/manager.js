@@ -36,9 +36,12 @@ function wireProfileDialog(){
   const file=form.elements.photoFile,preview=form.querySelector('.profile-photo-preview');
   file.onchange=()=>{const selected=file.files[0];if(!selected)return;if(!['image/png','image/jpeg','image/webp'].includes(selected.type)||selected.size>250000){file.value='';notify('Выберите фото PNG, JPEG или WebP размером до 250 КБ');return;}const reader=new FileReader();reader.onload=()=>preview.src=reader.result;reader.readAsDataURL(selected);};
   form.onsubmit=async e=>{
-    e.preventDefault();const applyCurrent=e.submitter?.name==='applyCurrent',controls=[...form.querySelectorAll('input,select,button')];controls.forEach(control=>control.disabled=true);
+    e.preventDefault();
+    const applyCurrent=e.submitter?.name==='applyCurrent',values=new FormData(form),selectedPhoto=file.files[0];
+    const profile={firstName:String(values.get('firstName')||''),lastName:String(values.get('lastName')||''),phone:String(values.get('phone')||''),messengerPhone:String(values.get('messengerPhone')||''),photo:managerProfile.photo||'',messengers:readMessengerFields(form)};
+    const controls=[...form.querySelectorAll('input,select,button')];controls.forEach(control=>control.disabled=true);
     try{
-      const values=new FormData(form),profile={firstName:String(values.get('firstName')||''),lastName:String(values.get('lastName')||''),phone:String(values.get('phone')||''),messengerPhone:String(values.get('messengerPhone')||''),photo:await fileData(file.files[0],managerProfile.photo||''),messengers:readMessengerFields(form)};
+      profile.photo=await fileData(selectedPhoto,profile.photo);
       managerProfile=(await api('/api/profile','PUT',{profile})).profile;
       if(applyCurrent&&current){
         const body=structuredClone(current.body);profileToProposal(body,managerProfile);
