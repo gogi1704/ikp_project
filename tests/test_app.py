@@ -10,6 +10,8 @@ from backend.domain import DEFAULT_MANAGER_MESSENGER_PHONE, DEFAULT_MANAGER_PHON
 class AppTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
+        self.consilium=patch('backend.app.consilium.create_access_link', return_value={'url':'https://consilium.example/ikp/test','trialDays':5})
+        self.consilium.start()
         app.DB=str(Path(self.tmp.name)/'test.sqlite3')
         app.init_db()
         app.create_user('manager@example.test','long-test-password')
@@ -18,6 +20,7 @@ class AppTests(unittest.TestCase):
         self.call('/api/login','POST',{'login':'manager@example.test','password':'long-test-password'})
 
     def tearDown(self):
+        self.consilium.stop()
         self.tmp.cleanup()
 
     def call(self,path,method='GET',body=None,authenticated=True,origin=None):
@@ -55,6 +58,8 @@ class AppTests(unittest.TestCase):
         s['basePrice']=1;s['total']=1
         status,result=self.call(endpoint+'/submit','POST',s,False)
         self.assertEqual(status,200)
+        self.assertEqual(result['consilium']['trialDays'],5)
+        self.assertEqual(result['consilium']['url'],'https://consilium.example/ikp/test')
         self.assertEqual(result['totals']['total'],3850000)
         s['comments']='Повторная заявка'
         repeated=self.call(endpoint+'/submit','POST',s,False)[1]
@@ -83,6 +88,16 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.call('/api/proposals/'+p['id']+'/activity')[0],404)
         self.assertEqual(self.call('/api/proposals')[1],[])
         self.assertEqual(self.call('/api/activity')[1]['linkCount'],0)
+
+    def test_submission_is_not_saved_without_consilium_link(self):
+        p,token=self.published()
+        endpoint='/api/public/'+token
+        selection=self.call(endpoint,authenticated=False)[1]['selection']
+        with patch('backend.app.consilium.create_access_link', side_effect=app.consilium.ConsiliumUnavailable('Консилиум временно недоступен')):
+            status,result=self.call(endpoint+'/submit','POST',selection,False)
+        self.assertEqual(status,503)
+        self.assertEqual(result['error'],'Консилиум временно недоступен')
+        self.assertEqual(self.call('/api/proposals/'+p['id']+'/activity')[1]['submissions'],[])
 
     def test_client_video_is_served_as_mp4(self):
         env={'REQUEST_METHOD':'GET','PATH_INFO':'/static/corporate-care.mp4','wsgi.input':io.BytesIO(b''),'REMOTE_ADDR':'127.0.0.1'}

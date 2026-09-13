@@ -46,7 +46,7 @@ def load_dotenv(path):
         os.environ.setdefault(name, value)
 
 load_dotenv(ROOT / '.env')
-from backend import company_suggestions
+from backend import company_suggestions, consilium
 
 DB = os.environ.get('DATABASE_PATH', str(ROOT / 'data' / 'ikp.sqlite3'))
 ORIGIN = os.environ.get('PUBLIC_ORIGIN', 'http://localhost:8000').rstrip('/')
@@ -174,6 +174,9 @@ def application(env, start_response):
     except (ValueError, TypeError, AttributeError, KeyError) as e:
         status, body = 400, json.dumps({'error': str(e) if isinstance(e, ValueError) else 'Некорректные данные'}, ensure_ascii=False).encode()
         headers.append(('Content-Type', 'application/json; charset=utf-8'))
+    except consilium.ConsiliumUnavailable as e:
+        status, body = 503, json.dumps({'error': str(e)}, ensure_ascii=False).encode()
+        headers.append(('Content-Type', 'application/json; charset=utf-8'))
     except Exception:
         import logging
         logging.exception('Request failed')
@@ -256,6 +259,7 @@ def route(env):
                 totals = calculate(p,s)
                 if parts[4] == 'quote':
                     return totals, []
+                access = consilium.create_access_link(p.get('inn'), p.get('company'))
                 db.execute('BEGIN IMMEDIATE')
                 fresh = db.execute('SELECT * FROM links WHERE id=?',(link['id'],)).fetchone()
                 if fresh['revoked']:
@@ -263,7 +267,7 @@ def route(env):
                 receipt = secrets.token_hex(12)
                 db.execute('INSERT INTO submissions VALUES(?,?,?,?,?)',(receipt,link['id'],json.dumps(s),json.dumps(totals),now))
                 audit(db,'client','submitted',link['proposal_id'])
-                return {'receipt':receipt,'totals':totals}, []
+                return {'receipt':receipt,'totals':totals,'consilium':access}, []
             raise Error(404,'Страница не найдена')
         if path.startswith('/api/'):
             if method != 'GET':

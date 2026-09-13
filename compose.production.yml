@@ -11,6 +11,9 @@ services:
       - ${IKP_ENV_FILE:-.env.production}
     environment:
       DATABASE_PATH: /app/data/ikp.sqlite3
+    networks:
+      - default
+      - consilium_internal
     ports:
       - "127.0.0.1:${IKP_BIND_PORT:-18080}:8000"
     volumes:
@@ -34,3 +37,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  consilium_internal:
+    external: true
+    name: consilium-internal
