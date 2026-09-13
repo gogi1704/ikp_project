@@ -72,7 +72,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), csrf TEXT NOT NULL, expires INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS proposals(id TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id), body TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, created INTEGER NOT NULL, updated INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS links(id TEXT PRIMARY KEY, proposal_id TEXT NOT NULL REFERENCES proposals(id), token TEXT UNIQUE NOT NULL, snapshot TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL, viewed INTEGER);
-        CREATE TABLE IF NOT EXISTS submissions(id TEXT PRIMARY KEY, link_id TEXT UNIQUE NOT NULL REFERENCES links(id), body TEXT NOT NULL, totals TEXT NOT NULL, created INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS submissions(id TEXT PRIMARY KEY, link_id TEXT NOT NULL REFERENCES links(id), body TEXT NOT NULL, totals TEXT NOT NULL, created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, actor TEXT NOT NULL, event TEXT NOT NULL, entity TEXT NOT NULL, created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS attempts(key TEXT PRIMARY KEY, count INTEGER NOT NULL, reset INTEGER NOT NULL);
         ''')
@@ -85,7 +85,13 @@ def init_db():
         version = db.execute('PRAGMA user_version').fetchone()[0]
         if version < 7:
             db.execute("UPDATE users SET phone=?, messenger_phone=? WHERE role='manager'", (DEFAULT_MANAGER_PHONE, DEFAULT_MANAGER_MESSENGER_PHONE))
-        db.execute('PRAGMA user_version=7')
+        if version < 8:
+            db.execute('CREATE TABLE submissions_v8(id TEXT PRIMARY KEY, link_id TEXT NOT NULL REFERENCES links(id), body TEXT NOT NULL, totals TEXT NOT NULL, created INTEGER NOT NULL)')
+            db.execute('INSERT INTO submissions_v8 SELECT id,link_id,body,totals,created FROM submissions')
+            db.execute('DROP TABLE submissions')
+            db.execute('ALTER TABLE submissions_v8 RENAME TO submissions')
+        db.execute('CREATE INDEX IF NOT EXISTS submissions_link_id_idx ON submissions(link_id)')
+        db.execute('PRAGMA user_version=8')
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -241,7 +247,7 @@ def route(env):
             if link['revoked']:
                 raise Error(410,'Ссылка отозвана. Обратитесь к менеджеру')
             p = json.loads(link['snapshot'])
-            existing = db.execute('SELECT * FROM submissions WHERE link_id=?', (link['id'],)).fetchone()
+            existing = db.execute('SELECT * FROM submissions WHERE link_id=? ORDER BY created DESC,rowid DESC LIMIT 1', (link['id'],)).fetchone()
             if method == 'GET' and len(parts) == 4:
                 db.execute('UPDATE links SET viewed=COALESCE(viewed,?) WHERE id=?',(now,link['id']))
                 return {'proposal':p,'selection':json.loads(existing['body']) if existing else selection(p), 'receipt':existing['id'] if existing else None}, []
@@ -254,9 +260,6 @@ def route(env):
                 fresh = db.execute('SELECT * FROM links WHERE id=?',(link['id'],)).fetchone()
                 if fresh['revoked']:
                     raise Error(410,'Ссылка отозвана')
-                existing = db.execute('SELECT * FROM submissions WHERE link_id=?',(link['id'],)).fetchone()
-                if existing:
-                    return {'receipt':existing['id'],'totals':json.loads(existing['totals'])}, []
                 receipt = secrets.token_hex(12)
                 db.execute('INSERT INTO submissions VALUES(?,?,?,?,?)',(receipt,link['id'],json.dumps(s),json.dumps(totals),now))
                 audit(db,'client','submitted',link['proposal_id'])

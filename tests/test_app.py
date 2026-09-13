@@ -42,7 +42,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(status,200)
         return p,l['url'].split('/p/')[1]
 
-    def test_full_flow_snapshot_and_idempotency(self):
+    def test_full_flow_snapshot_and_multiple_submissions(self):
         p,token=self.published()
         endpoint='/api/public/'+token
         status,view=self.call(endpoint,authenticated=False)
@@ -56,13 +56,18 @@ class AppTests(unittest.TestCase):
         status,result=self.call(endpoint+'/submit','POST',s,False)
         self.assertEqual(status,200)
         self.assertEqual(result['totals']['total'],3850000)
-        duplicate=self.call(endpoint+'/submit','POST',s,False)[1]
-        self.assertEqual(result['receipt'],duplicate['receipt'])
-        self.assertEqual(len(self.call('/api/proposals/'+p['id']+'/activity')[1]['submissions']),1)
+        s['comments']='Повторная заявка'
+        repeated=self.call(endpoint+'/submit','POST',s,False)[1]
+        self.assertNotEqual(result['receipt'],repeated['receipt'])
+        activity=self.call('/api/proposals/'+p['id']+'/activity')[1]['submissions']
+        self.assertEqual(len(activity),2)
+        self.assertEqual({item['id'] for item in activity},{result['receipt'],repeated['receipt']})
+        self.assertEqual(next(item for item in activity if item['id']==repeated['receipt'])['body']['comments'],'Повторная заявка')
+        self.assertEqual(self.call(endpoint,authenticated=False)[1]['receipt'],repeated['receipt'])
         overview=self.call('/api/activity')[1]
-        self.assertEqual((overview['linkCount'],overview['submissionCount']),(1,1))
+        self.assertEqual((overview['linkCount'],overview['submissionCount']),(1,2))
         self.assertEqual(overview['proposals'][0]['id'],p['id'])
-        self.assertEqual(overview['proposals'][0]['submissions'][0]['id'],result['receipt'])
+        self.assertEqual({item['id'] for item in overview['proposals'][0]['submissions']},{result['receipt'],repeated['receipt']})
 
     def test_access_controls(self):
         p,token=self.published()
@@ -265,7 +270,21 @@ class AppTests(unittest.TestCase):
             self.assertEqual((u['role'],u['active'],u['can_edit'],u['can_publish']),('manager',1,1,1))
             self.assertEqual(u['phone'],DEFAULT_MANAGER_PHONE)
             self.assertEqual(u['messenger_phone'],DEFAULT_MANAGER_MESSENGER_PHONE)
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],7)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],8)
+
+    def test_submission_migration_preserves_existing_and_allows_repeat(self):
+        proposal_row,_=self.published()
+        link_id=self.call('/api/proposals/'+proposal_row['id']+'/activity')[1]['links'][0]['id']
+        with app.connect() as db:
+            db.execute('DROP TABLE submissions')
+            db.execute('CREATE TABLE submissions(id TEXT PRIMARY KEY,link_id TEXT UNIQUE NOT NULL REFERENCES links(id),body TEXT NOT NULL,totals TEXT NOT NULL,created INTEGER NOT NULL)')
+            db.execute('INSERT INTO submissions VALUES(?,?,?,?,?)',('old-submission',link_id,'{}','{}',1))
+            db.execute('PRAGMA user_version=7')
+        app.init_db()
+        with app.connect() as db:
+            db.execute('INSERT INTO submissions VALUES(?,?,?,?,?)',('new-submission',link_id,'{}','{}',2))
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM submissions WHERE link_id=?',(link_id,)).fetchone()[0],2)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],8)
 
     def test_manager_profile_is_copied_to_new_proposals(self):
         self.admin_login()
