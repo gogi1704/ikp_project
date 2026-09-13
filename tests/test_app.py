@@ -63,7 +63,9 @@ class AppTests(unittest.TestCase):
         self.assertEqual(len(activity),2)
         self.assertEqual({item['id'] for item in activity},{result['receipt'],repeated['receipt']})
         self.assertEqual(next(item for item in activity if item['id']==repeated['receipt'])['body']['comments'],'Повторная заявка')
-        self.assertEqual(self.call(endpoint,authenticated=False)[1]['receipt'],repeated['receipt'])
+        reopened=self.call(endpoint,authenticated=False)[1]
+        self.assertIsNone(reopened['receipt'])
+        self.assertEqual(reopened['selection']['comments'],'Повторная заявка')
         overview=self.call('/api/activity')[1]
         self.assertEqual((overview['linkCount'],overview['submissionCount']),(1,2))
         self.assertEqual(overview['proposals'][0]['id'],p['id'])

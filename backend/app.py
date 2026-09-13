@@ -250,7 +250,7 @@ def route(env):
             existing = db.execute('SELECT * FROM submissions WHERE link_id=? ORDER BY created DESC,rowid DESC LIMIT 1', (link['id'],)).fetchone()
             if method == 'GET' and len(parts) == 4:
                 db.execute('UPDATE links SET viewed=COALESCE(viewed,?) WHERE id=?',(now,link['id']))
-                return {'proposal':p,'selection':json.loads(existing['body']) if existing else selection(p), 'receipt':existing['id'] if existing else None}, []
+                return {'proposal':p,'selection':json.loads(existing['body']) if existing else selection(p), 'receipt':None}, []
             if method == 'POST' and len(parts) == 5 and parts[4] in ('quote','submit'):
                 s = selection(p,data)
                 totals = calculate(p,s)
