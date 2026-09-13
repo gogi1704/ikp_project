@@ -77,6 +77,16 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.call('/api/proposals')[1],[])
         self.assertEqual(self.call('/api/activity')[1]['linkCount'],0)
 
+    def test_client_video_is_served_as_mp4(self):
+        env={'REQUEST_METHOD':'GET','PATH_INFO':'/static/corporate-care.mp4','wsgi.input':io.BytesIO(b''),'REMOTE_ADDR':'127.0.0.1'}
+        response={}
+        def start(status,headers):
+            response['status']=int(status.split()[0]);response['headers']=dict(headers)
+        body=b''.join(app.application(env,start))
+        self.assertEqual(response['status'],200)
+        self.assertEqual(response['headers']['Content-Type'],'video/mp4')
+        self.assertTrue(body.startswith(b'\x00\x00\x00'))
+
     def test_links_ignore_expiry_but_respect_revocation(self):
         p,token=self.published()
         self.assertEqual(self.call('/api/proposals/'+p['id'],'PUT',{'body':p['body'],'version':0})[0],409)
