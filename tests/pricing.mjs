@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {totals} from '../static/shared.js';
+import {rub,totals} from '../static/shared.js';
 const catalog=JSON.parse(fs.readFileSync(new URL('../static/catalog.json',import.meta.url)));
 const p={basePrice:2500,count:10};
 const s={count:10,addons:{}};
@@ -12,4 +12,5 @@ s.health.liverKidney.qty=5;s.addons.sanmin={on:true,qty:4};
 assert.equal(totals(p,s,catalog).total,3850000);
 s.health.liverKidney.qty=1;
 assert.equal(totals(p,s,catalog).health,220000);
+assert.equal(rub(123456).includes(','),false);
 console.log('Frontend pricing: passed');

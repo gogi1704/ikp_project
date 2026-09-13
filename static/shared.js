@@ -1,6 +1,6 @@
 export const $ = (s) => document.querySelector(s);
 export const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export const rub = v => new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',maximumFractionDigits:2}).format(v/100);
+export const rub = v => new Intl.NumberFormat('ru-RU',{style:'currency',currency:'RUB',minimumFractionDigits:0,maximumFractionDigits:0}).format(Math.round(v/100));
 export const date = v => new Date(v*1000).toLocaleDateString('ru-RU');
 let csrf = '';
 export function setCsrf(v){ csrf = v; }

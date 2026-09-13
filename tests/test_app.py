@@ -121,9 +121,11 @@ class AppTests(unittest.TestCase):
         with self.assertRaises(ValueError):selection(p,s)
         s=selection(p);s['addons']['lmk']['qty']=11
         with self.assertRaises(ValueError):selection(p,s)
-        p=proposal({'count':1,'basePrice':0.29})
+        p=proposal({'count':1,'basePrice':0.51})
         s=selection(p)
-        self.assertEqual(calculate(p,s)['base'],29)
+        self.assertEqual(p['basePrice'],1)
+        self.assertTrue(all(isinstance(item['price'],int) for group in ('corp','health') for item in p[group].values()))
+        self.assertEqual(calculate(p,s)['base'],100)
         self.assertEqual(calculate(p,s)['health'],22000)
 
     def test_fixed_service_cannot_be_disabled_but_recommended_can(self):

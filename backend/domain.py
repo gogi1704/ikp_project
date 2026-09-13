@@ -1,7 +1,7 @@
 import base64
 import binascii
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from urllib.parse import parse_qs, urlparse
 
 CORP = [('manager', 'Персональный менеджер', 0), ('delay', 'Отсрочка платежа', 0), ('monitor', 'Система мониторинга документооборота', 0), ('checkupPrice', 'Специальная цена на чек-апы во время медосмотра', 100)]
@@ -21,6 +21,15 @@ def money(v):
         if not d.is_finite() or d < 0 or d > 10000000 or d != d.quantize(Decimal('.01')):
             raise ValueError('Цена должна быть от 0 до 10 000 000, не более двух знаков после запятой')
         return int(d * 100)
+    except (InvalidOperation, TypeError):
+        raise ValueError('Некорректная цена')
+
+def whole_rubles(v):
+    try:
+        d = Decimal(str(v))
+        if not d.is_finite() or d < 0 or d > 10000000:
+            raise ValueError('Цена должна быть от 0 до 10 000 000 рублей')
+        return int(d.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
     except (InvalidOperation, TypeError):
         raise ValueError('Некорректная цена')
 
@@ -106,7 +115,7 @@ def proposal(data, publish=False):
     if p['inn'] and (not p['inn'].isascii() or not p['inn'].isdigit() or len(p['inn']) not in (10, 12)):
         raise ValueError('ИНН должен содержать 10 или 12 цифр')
     p['count'] = integer(data.get('count', 1), 1)
-    p['basePrice'] = money(data.get('basePrice', 2500)) / 100
+    p['basePrice'] = whole_rubles(data.get('basePrice', 2500))
     p['mopPhoto'] = image_data(data.get('mopPhoto', ''))
     p['mopMessengers'] = messenger_accounts(data.get('mopMessengers', []))
     recommended_count = 0
@@ -122,7 +131,7 @@ def proposal(data, publish=False):
             recommended_count += int(recommended)
             p[group][code] = {
                 'on': on,
-                'price': money(item.get('price', price)) / 100,
+                'price': whole_rubles(item.get('price', price)),
                 'fixed': fixed,
                 'recommended': recommended,
             }

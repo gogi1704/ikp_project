@@ -358,7 +358,7 @@ def route(env):
                     raise Error(403, 'Нет права на публикацию и отзыв ссылок' if publishing else 'Нет права на создание и редактирование предложений')
             if path == '/api/proposals' and method == 'GET':
                 rows = db.execute('SELECT * FROM proposals WHERE owner=? ORDER BY updated DESC',(uid,)).fetchall()
-                return [dict(r) | {'body':apply_manager_profile(json.loads(r['body']), session)} for r in rows], []
+                return [dict(r) | {'body':apply_manager_profile(proposal(json.loads(r['body'])), session)} for r in rows], []
             if path == '/api/proposals' and method == 'POST':
                 p, pid = apply_manager_profile(proposal(data), session), secrets.token_hex(16)
                 db.execute('INSERT INTO proposals VALUES(?,?,?,1,?,?)',(pid,uid,json.dumps(p),now,now))
