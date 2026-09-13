@@ -7,6 +7,8 @@ from urllib.parse import parse_qs, urlparse
 CORP = [('manager', 'Персональный менеджер', 0), ('delay', 'Отсрочка платежа', 0), ('monitor', 'Система мониторинга документооборота', 0), ('checkupPrice', 'Специальная цена на чек-апы во время медосмотра', 100)]
 HEALTH = [('quiz', '«Умное» анкетирование', 0), ('aiAssist', 'ИИ-ассистент «Здоровый сотрудник»', 20), ('selfBuy', 'Индивидуальная покупка чек-апов', 0), ('liverKidney', 'Чек-ап «Здоровье печени и почек»', 2500), ('onco', 'Онко-ассистанс', 200)]
 ADDONS = [('lmk', 'Новый бланк личной медицинской книжки', 650), ('sanmin', 'Санминимум', 700), ('staph', 'Исследование на стафилококк', 500), ('typhoid', 'Исследование на брюшной тиф', 200), ('intest', 'Исследование на кишечную инфекцию', 200)]
+DEFAULT_MANAGER_PHONE = '+7 (863) 322-67-66'
+DEFAULT_MANAGER_MESSENGER_PHONE = '+7 (989) 506-74-60'
 
 def integer(v, low=0, high=100000):
     if isinstance(v, bool) or not isinstance(v, int) or not low <= v <= high:
@@ -47,7 +49,9 @@ def image_data(value):
     return value
 
 def manager_profile(data):
-    profile = {k:string(data.get(k, ''), 150) for k in ('firstName','lastName','phone','messengerPhone')}
+    profile = {k:string(data.get(k, ''), 150) for k in ('firstName','lastName')}
+    profile['phone'] = string(data.get('phone', DEFAULT_MANAGER_PHONE), 150)
+    profile['messengerPhone'] = string(data.get('messengerPhone', DEFAULT_MANAGER_MESSENGER_PHONE), 150)
     profile['photo'] = image_data(data.get('photo', ''))
     profile['messengers'] = messenger_accounts(data.get('messengers', []))
     return profile

@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from http.cookies import SimpleCookie
 from urllib.parse import urlparse
-from backend.domain import proposal, selection, calculate, manager_profile
+from backend.domain import DEFAULT_MANAGER_MESSENGER_PHONE, DEFAULT_MANAGER_PHONE, proposal, selection, calculate, manager_profile
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -82,7 +82,10 @@ def init_db():
         for name, definition in [('role', "TEXT NOT NULL DEFAULT 'manager'"), ('active', 'INTEGER NOT NULL DEFAULT 1'), ('can_edit', 'INTEGER NOT NULL DEFAULT 1'), ('can_publish', 'INTEGER NOT NULL DEFAULT 1'), ('first_name', "TEXT NOT NULL DEFAULT ''"), ('last_name', "TEXT NOT NULL DEFAULT ''"), ('phone', "TEXT NOT NULL DEFAULT ''"), ('messenger_phone', "TEXT NOT NULL DEFAULT ''"), ('photo', "TEXT NOT NULL DEFAULT ''"), ('messengers', "TEXT NOT NULL DEFAULT '[]'")]:
             if name not in columns:
                 db.execute(f'ALTER TABLE users ADD COLUMN {name} {definition}')
-        db.execute('PRAGMA user_version=5')
+        version = db.execute('PRAGMA user_version').fetchone()[0]
+        if version < 7:
+            db.execute("UPDATE users SET phone=?, messenger_phone=? WHERE role='manager'", (DEFAULT_MANAGER_PHONE, DEFAULT_MANAGER_MESSENGER_PHONE))
+        db.execute('PRAGMA user_version=7')
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -131,6 +134,16 @@ def profile_from_row(row):
     except (json.JSONDecodeError, TypeError):
         messengers = []
     return {'firstName':row['first_name'], 'lastName':row['last_name'], 'phone':row['phone'], 'messengerPhone':row['messenger_phone'], 'photo':row['photo'], 'messengers':messengers}
+
+def apply_manager_profile(p, row):
+    profile = profile_from_row(row)
+    p['mopFirstName'] = profile['firstName']
+    p['mopLastName'] = profile['lastName']
+    p['mopPhone'] = profile['phone']
+    p['mopMessengerPhone'] = profile['messengerPhone']
+    p['mopPhoto'] = profile['photo']
+    p['mopMessengers'] = profile['messengers']
+    return p
 
 class Error(Exception):
     def __init__(self, status, message):
@@ -266,13 +279,6 @@ def route(env):
             if path == '/api/logout' and method == 'POST':
                 db.execute('DELETE FROM sessions WHERE token=?',(session['token'],))
                 return {}, [('Set-Cookie','ikp_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')]
-            if path == '/api/profile' and method == 'PUT':
-                if session['role'] != 'manager':
-                    raise Error(403, 'Профиль доступен только менеджеру')
-                profile = manager_profile(data.get('profile', {}))
-                db.execute('UPDATE users SET first_name=?,last_name=?,phone=?,messenger_phone=?,photo=?,messengers=? WHERE id=?', (profile['firstName'],profile['lastName'],profile['phone'],profile['messengerPhone'],profile['photo'],json.dumps(profile['messengers'], ensure_ascii=False),uid))
-                audit(db, uid, 'profile_updated', uid)
-                return {'profile':profile}, []
             if path.startswith('/api/admin/'):
                 if session['role'] != 'admin':
                     raise Error(403, 'Доступ только для администратора')
@@ -352,15 +358,9 @@ def route(env):
                     raise Error(403, 'Нет права на публикацию и отзыв ссылок' if publishing else 'Нет права на создание и редактирование предложений')
             if path == '/api/proposals' and method == 'GET':
                 rows = db.execute('SELECT * FROM proposals WHERE owner=? ORDER BY updated DESC',(uid,)).fetchall()
-                return [dict(r) | {'body':json.loads(r['body'])} for r in rows], []
+                return [dict(r) | {'body':apply_manager_profile(json.loads(r['body']), session)} for r in rows], []
             if path == '/api/proposals' and method == 'POST':
-                p, pid = proposal(data), secrets.token_hex(16)
-                p['mopFirstName'] = session['first_name']
-                p['mopLastName'] = session['last_name']
-                p['mopPhone'] = session['phone']
-                p['mopMessengerPhone'] = session['messenger_phone']
-                p['mopPhoto'] = session['photo']
-                p['mopMessengers'] = profile_from_row(session)['messengers']
+                p, pid = apply_manager_profile(proposal(data), session), secrets.token_hex(16)
                 db.execute('INSERT INTO proposals VALUES(?,?,?,1,?,?)',(pid,uid,json.dumps(p),now,now))
                 audit(db,uid,'created',pid)
                 return {'id':pid,'version':1,'body':p}, []
@@ -371,7 +371,7 @@ def route(env):
                 if not row:
                     raise Error(404,'Предложение не найдено')
                 if method == 'PUT' and len(parts) == 4:
-                    p = proposal(data['body'])
+                    p = apply_manager_profile(proposal(data['body']), session)
                     updated = db.execute('UPDATE proposals SET body=?,version=version+1,updated=? WHERE id=? AND version=?',(json.dumps(p),now,pid,data.get('version')))
                     if not updated.rowcount:
                         raise Error(409,'Предложение изменено в другой вкладке. Обновите страницу')
@@ -391,7 +391,7 @@ def route(env):
                     subs = [dict(r) | {'body':json.loads(r['body']),'totals':json.loads(r['totals'])} for r in db.execute('SELECT s.* FROM submissions s JOIN links l ON s.link_id=l.id WHERE l.proposal_id=?',(pid,))]
                     return {'links':links,'submissions':subs}, []
                 if method == 'POST' and len(parts) == 5 and parts[4] == 'publish':
-                    p = proposal(json.loads(row['body']),True)
+                    p = apply_manager_profile(proposal(json.loads(row['body']),True), session)
                     token = public_link_slug(p) + '-' + secrets.token_urlsafe(32)
                     lid = secrets.token_hex(16)
                     db.execute('INSERT INTO links(id,proposal_id,token,snapshot,expires,created) VALUES(?,?,?,?,?,?)',(lid,pid,digest(token),json.dumps(p),0,now))
