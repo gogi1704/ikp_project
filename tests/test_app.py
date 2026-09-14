@@ -141,19 +141,22 @@ class AppTests(unittest.TestCase):
         self.assertEqual(p['body']['addons']['sanmin']['qty'],7)
         self.assertEqual(p['body']['addons']['sanmin']['price'],900)
         self.assertEqual(p['body']['addons']['lmk']['price'],650)
+        self.assertTrue(p['body']['addons']['lmk']['on'])
+        self.assertEqual(p['body']['addons']['lmk']['qty'],0)
         token=self.call('/api/proposals/'+p['id']+'/publish','POST')[1]['url'].split('/p/')[1]
         public=self.call('/api/public/'+token,authenticated=False)[1]
         self.assertTrue(public['selection']['addons']['sanmin']['on'])
         self.assertEqual(public['selection']['addons']['sanmin']['qty'],7)
         self.assertEqual(public['proposal']['addons']['sanmin']['price'],900)
         self.assertEqual(self.call('/api/public/'+token+'/quote','POST',public['selection'],False)[1]['addons'],630000)
-        self.assertFalse(public['selection']['addons']['lmk']['on'])
+        self.assertTrue(public['selection']['addons']['lmk']['on'])
+        self.assertEqual(public['selection']['addons']['lmk']['qty'],0)
 
         legacy=p['body'].copy()
         legacy.pop('addons')
         defaults=selection(legacy)
-        self.assertFalse(defaults['addons']['sanmin']['on'])
-        self.assertEqual(defaults['addons']['sanmin']['qty'],12)
+        self.assertTrue(defaults['addons']['sanmin']['on'])
+        self.assertEqual(defaults['addons']['sanmin']['qty'],0)
 
     def test_links_ignore_expiry_but_respect_revocation(self):
         p,token=self.published()

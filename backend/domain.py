@@ -138,10 +138,10 @@ def proposal(data, publish=False):
     p['addons'] = {}
     for code, _, price in ADDONS:
         item = data.get('addons', {}).get(code, {})
-        qty = integer(item.get('qty', p['count']))
+        qty = integer(item.get('qty', 0))
         if qty > p['count']:
             raise ValueError('Количество услуг не может превышать число сотрудников')
-        p['addons'][code] = {'on': boolean(item.get('on', False)), 'qty': qty, 'price': whole_rubles(item.get('price', price))}
+        p['addons'][code] = {'on': boolean(item.get('on', True)), 'qty': qty, 'price': whole_rubles(item.get('price', price))}
     if recommended_count > 1:
         raise ValueError('Рекомендованной можно отметить только одну услугу')
     if publish and (not p['company'] or not p['lpr']):
@@ -156,13 +156,13 @@ def selection(p, data=None):
         for code, _, price in catalog:
             offered = group == 'addons' or p[group][code]['on']
             item = data.get(group, {}).get(code, {})
-            preset = p.get('addons', {}).get(code, {}) if group == 'addons' else {}
-            on = boolean(item.get('on', preset.get('on', False) if group == 'addons' else offered))
+            preset = p.get('addons', {}).get(code, {'on': True, 'qty': 0}) if group == 'addons' else {}
+            on = boolean(item.get('on', preset.get('on', True) if group == 'addons' else offered))
             if on and not offered:
                 raise ValueError('Услуга отсутствует в предложении')
             if group != 'addons' and p[group][code].get('fixed', False) and not on:
                 raise ValueError('Зафиксированную менеджером услугу нельзя отключить')
-            qty = integer(item.get('qty', preset.get('qty', s['count']) if group == 'addons' else 2 if code == 'liverKidney' else s['count']))
+            qty = integer(item.get('qty', preset.get('qty', 0) if group == 'addons' else 2 if code == 'liverKidney' else s['count']))
             if group == 'addons' and qty > s['count']:
                 raise ValueError('Количество услуг не может превышать число сотрудников')
             s[group][code] = {'on': on, 'qty': qty}

@@ -15,7 +15,7 @@ async function start(me){
   $('#logout').onclick=async()=>{if(dirty&&!confirm('Выйти без сохранения изменений?'))return;await api('/api/logout','POST');dirty=false;location.reload();};
   current=rows[0]||null;render();
 }
-function selection(p){return {count:p.count,corp:p.corp,health:Object.fromEntries(Object.entries(p.health).map(([k,v])=>[k,{...v,qty:2}])),addons:Object.fromEntries(catalog.addons.map(o=>[o.code,{...(p.addons?.[o.code]||{on:false,qty:p.count})}]))};}
+function selection(p){return {count:p.count,corp:p.corp,health:Object.fromEntries(Object.entries(p.health).map(([k,v])=>[k,{...v,qty:2}])),addons:Object.fromEntries(catalog.addons.map(o=>[o.code,{...(p.addons?.[o.code]||{on:true,qty:0,price:o.price})}]))};}
 function managerSummary(p){
   const name=[p.mopFirstName,p.mopLastName].filter(Boolean).join(' ')||'Имя не заполнено';
   const messengers=(p.mopMessengers||[]).map(item=>`<span class="pill">${esc(item.label)}: ${esc(item.value)}</span>`).join('');
