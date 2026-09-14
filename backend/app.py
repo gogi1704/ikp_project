@@ -151,6 +151,15 @@ def apply_manager_profile(p, row):
     p['mopMessengers'] = profile['messengers']
     return p
 
+def submission_from_row(row):
+    item = dict(row)
+    item['body'] = json.loads(item['body'])
+    item['totals'] = json.loads(item['totals'])
+    snapshot = item.pop('proposal_snapshot', None)
+    if snapshot:
+        item['proposal'] = json.loads(snapshot)
+    return item
+
 class Error(Exception):
     def __init__(self, status, message):
         self.status, self.message = status, message
@@ -354,7 +363,7 @@ def route(env):
                 for row in db.execute('SELECT id,body,created,updated FROM proposals WHERE owner=? ORDER BY updated DESC', (uid,)):
                     body = json.loads(row['body'])
                     links = [dict(item) for item in db.execute('SELECT id,revoked,created,viewed FROM links WHERE proposal_id=? ORDER BY created DESC', (row['id'],))]
-                    submissions = [dict(item) | {'body':json.loads(item['body']),'totals':json.loads(item['totals'])} for item in db.execute('SELECT s.* FROM submissions s JOIN links l ON s.link_id=l.id WHERE l.proposal_id=? ORDER BY s.created DESC', (row['id'],))]
+                    submissions = [submission_from_row(item) for item in db.execute('SELECT s.*,l.snapshot AS proposal_snapshot FROM submissions s JOIN links l ON s.link_id=l.id WHERE l.proposal_id=? ORDER BY s.created DESC', (row['id'],))]
                     link_count += len(links)
                     submission_count += len(submissions)
                     groups.append({'id':row['id'],'company':body.get('company',''),'lpr':body.get('lpr',''),'created':row['created'],'updated':row['updated'],'links':links,'submissions':submissions})
@@ -395,7 +404,7 @@ def route(env):
                     return {}, []
                 if method == 'GET' and len(parts) == 5 and parts[4] == 'activity':
                     links = [dict(r) for r in db.execute('SELECT id,revoked,created,viewed FROM links WHERE proposal_id=? ORDER BY created DESC',(pid,))]
-                    subs = [dict(r) | {'body':json.loads(r['body']),'totals':json.loads(r['totals'])} for r in db.execute('SELECT s.* FROM submissions s JOIN links l ON s.link_id=l.id WHERE l.proposal_id=?',(pid,))]
+                    subs = [submission_from_row(r) for r in db.execute('SELECT s.*,l.snapshot AS proposal_snapshot FROM submissions s JOIN links l ON s.link_id=l.id WHERE l.proposal_id=?',(pid,))]
                     return {'links':links,'submissions':subs}, []
                 if method == 'POST' and len(parts) == 5 and parts[4] == 'publish':
                     p = apply_manager_profile(proposal(json.loads(row['body']),True), session)

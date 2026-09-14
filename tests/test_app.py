@@ -67,7 +67,10 @@ class AppTests(unittest.TestCase):
         activity=self.call('/api/proposals/'+p['id']+'/activity')[1]['submissions']
         self.assertEqual(len(activity),2)
         self.assertEqual({item['id'] for item in activity},{result['receipt'],repeated['receipt']})
-        self.assertEqual(next(item for item in activity if item['id']==repeated['receipt'])['body']['comments'],'Повторная заявка')
+        repeated_item=next(item for item in activity if item['id']==repeated['receipt'])
+        self.assertEqual(repeated_item['body']['comments'],'Повторная заявка')
+        self.assertEqual(repeated_item['proposal']['basePrice'],2500)
+        self.assertEqual(repeated_item['proposal']['company'],'ООО «Тест»')
         reopened=self.call(endpoint,authenticated=False)[1]
         self.assertIsNone(reopened['receipt'])
         self.assertEqual(reopened['selection']['comments'],'Повторная заявка')
@@ -75,6 +78,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual((overview['linkCount'],overview['submissionCount']),(1,2))
         self.assertEqual(overview['proposals'][0]['id'],p['id'])
         self.assertEqual({item['id'] for item in overview['proposals'][0]['submissions']},{result['receipt'],repeated['receipt']})
+        self.assertEqual(overview['proposals'][0]['submissions'][0]['proposal']['basePrice'],2500)
 
     def test_access_controls(self):
         p,token=self.published()
