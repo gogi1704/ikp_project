@@ -125,6 +125,28 @@ class AppTests(unittest.TestCase):
                 self.assertEqual(response['headers']['Content-Type'],content_type)
                 self.assertTrue(body.startswith(b'PK'))
 
+    def test_manager_addon_presets_become_client_defaults(self):
+        status,p=self.call('/api/proposals','POST',{
+            'company':'ООО «Настройка»',
+            'lpr':'Иванова Ивана Ивановича',
+            'count':12,
+            'addons':{'sanmin':{'on':True,'qty':7}},
+        })
+        self.assertEqual(status,200)
+        self.assertTrue(p['body']['addons']['sanmin']['on'])
+        self.assertEqual(p['body']['addons']['sanmin']['qty'],7)
+        token=self.call('/api/proposals/'+p['id']+'/publish','POST')[1]['url'].split('/p/')[1]
+        public=self.call('/api/public/'+token,authenticated=False)[1]
+        self.assertTrue(public['selection']['addons']['sanmin']['on'])
+        self.assertEqual(public['selection']['addons']['sanmin']['qty'],7)
+        self.assertFalse(public['selection']['addons']['lmk']['on'])
+
+        legacy=p['body'].copy()
+        legacy.pop('addons')
+        defaults=selection(legacy)
+        self.assertFalse(defaults['addons']['sanmin']['on'])
+        self.assertEqual(defaults['addons']['sanmin']['qty'],12)
+
     def test_links_ignore_expiry_but_respect_revocation(self):
         p,token=self.published()
         self.assertEqual(self.call('/api/proposals/'+p['id'],'PUT',{'body':p['body'],'version':0})[0],409)
