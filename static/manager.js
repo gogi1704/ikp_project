@@ -27,13 +27,13 @@ function managerOption(g,o,p){
 }
 function managerAddonOption(o,p){
   const st=p.addons[o.code];
-  return `<div class="option manager-addon"><div class="option-line"><label class="check"><input type="checkbox" name="addons.${o.code}.on" ${st.on?'checked':''}><span>${esc(o.name)}</span></label><strong class="rate">${Math.round(o.price).toLocaleString('ru-RU')} ₽<small>/ сотрудника</small></strong></div>${field(`addons.${o.code}.qty`,'Количество сотрудников',st.qty,'number',`min="0" max="${p.count}" required class="addon-qty"`)}</div>`;
+  return `<div class="option manager-addon"><div class="option-line"><label class="check"><input type="checkbox" name="addons.${o.code}.on" ${st.on?'checked':''}><span>${esc(o.name)}</span></label><label class="price-input"><input class="money-input" type="number" name="addons.${o.code}.price" value="${Math.round(st.price)}" min="0" max="10000000" step="100" required aria-label="Цена: ${esc(o.name)}"><small>₽ / сотрудника</small></label></div>${field(`addons.${o.code}.qty`,'Количество сотрудников',st.qty,'number',`min="0" max="${p.count}" required class="addon-qty"`)}</div>`;
 }
 function submissionServiceRows(item,group){
   const selected=catalog[group].filter(o=>item.body[group]?.[o.code]?.on);
   if(!selected.length)return '<p class="muted small submission-none">Не выбрано</p>';
   return selected.map(o=>{
-    const state=item.body[group][o.code],price=group==='addons'?o.price:item.proposal?.[group]?.[o.code]?.price??o.defaultPrice??0;
+    const state=item.body[group][o.code],price=group==='addons'?item.proposal?.addons?.[o.code]?.price??o.price:item.proposal?.[group]?.[o.code]?.price??o.defaultPrice??0;
     const selectedQty=Number(state.qty??item.body.count),billableQty=group==='addons'?selectedQty:o.type==='qty'?Math.max(0,selectedQty-2):item.body.count;
     const qtyText=o.type==='qty'?`${selectedQty} шт. · первые 2 бесплатно`:group==='addons'?`${selectedQty} сотрудников`:`${item.body.count} сотрудников`;
     return `<div class="submission-service"><div><strong>${esc(o.name)}</strong><small>${qtyText} · ${Math.round(price).toLocaleString('ru-RU')} ₽ / ${o.type==='qty'?'доп. чек-ап':'сотрудника'}</small></div><b>${rub(Math.round(price*100)*billableQty)}</b></div>`;

@@ -19,7 +19,7 @@ function render(){
   updateSum();
 }
 function option(g,o){
-  const st=s[g][o.code], offer=g==='addons'?{}:p[g][o.code], price=g==='addons'?o.price:offer.price;
+  const st=s[g][o.code], offer=g==='addons'?p.addons?.[o.code]||{}:p[g][o.code], price=g==='addons'?offer.price??o.price:offer.price;
   const fixed=Boolean(offer.fixed), recommended=Boolean(offer.recommended);
   return `<div class="option client-option ${recommended?'recommended-option':''}">${recommended?'<div class="recommend-badge"><span aria-hidden="true">★</span> Рекомендуем</div>':''}<div class="option-line"><label class="check"><input type="checkbox" name="${g}.${o.code}.on" ${st.on?'checked':''} ${fixed?'disabled aria-disabled="true"':''}><span>${esc(o.name)}${fixed?'<small class="fixed-note">Включено менеджером</small>':''}</span></label><strong class="rate">${Math.round(price).toLocaleString('ru-RU')} ₽<small>/ ${o.type==='qty'?'доп. чек-ап':'сотрудника'}</small></strong></div>${g==='addons'||o.type==='qty'?field(`${g}.${o.code}.qty`,o.type==='qty'?'Количество чек-апов · первые 2 бесплатно':'Количество сотрудников',st.qty,'number',`min="0" max="${g==='addons'?s.count:100000}" required`):''}${optionDetails(o,true)}</div>`;
 }

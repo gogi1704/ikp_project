@@ -17,7 +17,7 @@ export function totals(p,s,catalog){
   for(const group of ['corp','health','addons']) for(const o of catalog[group]){
     const st=s[group]?.[o.code]; if(!st?.on)continue;
     const qty=group==='addons'?st.qty:o.type==='qty'?Math.max(0,st.qty-2):s.count;
-    t[group]+=Math.round((group==='addons'?o.price:p[group][o.code].price)*100)*qty;
+    t[group]+=Math.round((group==='addons'?p.addons?.[o.code]?.price??o.price:p[group][o.code].price)*100)*qty;
   }
   t.total=t.base+t.corp+t.health+t.addons;return t;
 }

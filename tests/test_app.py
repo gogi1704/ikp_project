@@ -134,15 +134,19 @@ class AppTests(unittest.TestCase):
             'company':'ООО «Настройка»',
             'lpr':'Иванова Ивана Ивановича',
             'count':12,
-            'addons':{'sanmin':{'on':True,'qty':7}},
+            'addons':{'sanmin':{'on':True,'qty':7,'price':900}},
         })
         self.assertEqual(status,200)
         self.assertTrue(p['body']['addons']['sanmin']['on'])
         self.assertEqual(p['body']['addons']['sanmin']['qty'],7)
+        self.assertEqual(p['body']['addons']['sanmin']['price'],900)
+        self.assertEqual(p['body']['addons']['lmk']['price'],650)
         token=self.call('/api/proposals/'+p['id']+'/publish','POST')[1]['url'].split('/p/')[1]
         public=self.call('/api/public/'+token,authenticated=False)[1]
         self.assertTrue(public['selection']['addons']['sanmin']['on'])
         self.assertEqual(public['selection']['addons']['sanmin']['qty'],7)
+        self.assertEqual(public['proposal']['addons']['sanmin']['price'],900)
+        self.assertEqual(self.call('/api/public/'+token+'/quote','POST',public['selection'],False)[1]['addons'],630000)
         self.assertFalse(public['selection']['addons']['lmk']['on'])
 
         legacy=p['body'].copy()

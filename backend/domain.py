@@ -136,12 +136,12 @@ def proposal(data, publish=False):
                 'recommended': recommended,
             }
     p['addons'] = {}
-    for code, _, _ in ADDONS:
+    for code, _, price in ADDONS:
         item = data.get('addons', {}).get(code, {})
         qty = integer(item.get('qty', p['count']))
         if qty > p['count']:
             raise ValueError('Количество услуг не может превышать число сотрудников')
-        p['addons'][code] = {'on': boolean(item.get('on', False)), 'qty': qty}
+        p['addons'][code] = {'on': boolean(item.get('on', False)), 'qty': qty, 'price': whole_rubles(item.get('price', price))}
     if recommended_count > 1:
         raise ValueError('Рекомендованной можно отметить только одну услугу')
     if publish and (not p['company'] or not p['lpr']):
@@ -176,7 +176,7 @@ def calculate(p, s):
         for code, _, price in catalog:
             item = s[group][code]
             if item['on']:
-                rate = money(price if group == 'addons' else p[group][code]['price'])
+                rate = money(p.get('addons', {}).get(code, {}).get('price', price) if group == 'addons' else p[group][code]['price'])
                 qty = item['qty'] if group == 'addons' else max(0, item['qty'] - 2) if code == 'liverKidney' else s['count']
                 totals[group] += rate * qty
     totals['total'] = sum(totals.values())
