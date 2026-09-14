@@ -109,6 +109,22 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response['headers']['Content-Type'],'video/mp4')
         self.assertTrue(body.startswith(b'\x00\x00\x00'))
 
+    def test_client_materials_are_downloadable(self):
+        materials={
+            '/static/materials/onco-assistance.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            '/static/materials/corporate-checkups-price.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }
+        for path,content_type in materials.items():
+            with self.subTest(path=path):
+                env={'REQUEST_METHOD':'GET','PATH_INFO':path,'wsgi.input':io.BytesIO(b''),'REMOTE_ADDR':'127.0.0.1'}
+                response={}
+                def start(status,headers):
+                    response['status']=int(status.split()[0]);response['headers']=dict(headers)
+                body=b''.join(app.application(env,start))
+                self.assertEqual(response['status'],200)
+                self.assertEqual(response['headers']['Content-Type'],content_type)
+                self.assertTrue(body.startswith(b'PK'))
+
     def test_links_ignore_expiry_but_respect_revocation(self):
         p,token=self.published()
         self.assertEqual(self.call('/api/proposals/'+p['id'],'PUT',{'body':p['body'],'version':0})[0],409)

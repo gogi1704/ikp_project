@@ -209,9 +209,9 @@ def route(env):
         return (ROOT / 'static' / 'admin.html').read_bytes(), [('Content-Type', 'text/html; charset=utf-8')]
     if method == 'GET' and path.startswith('/p/'):
         return (ROOT / 'static' / 'client.html').read_bytes(), [('Content-Type', 'text/html; charset=utf-8')]
-    if method == 'GET' and path in ['/static/app.css', '/static/shared.js', '/static/manager.js', '/static/client.js', '/static/admin.js', '/static/catalog.json', '/static/logo.png', '/static/corporate-care.mp4']:
+    if method == 'GET' and path in ['/static/app.css', '/static/shared.js', '/static/manager.js', '/static/client.js', '/static/admin.js', '/static/catalog.json', '/static/logo.png', '/static/corporate-care.mp4', '/static/materials/onco-assistance.pptx', '/static/materials/corporate-checkups-price.xlsx']:
         ext = Path(path).suffix
-        return (ROOT / path.lstrip('/')).read_bytes(), [('Content-Type', {'.css':'text/css', '.js':'text/javascript', '.json':'application/json', '.png':'image/png', '.mp4':'video/mp4'}[ext])]
+        return (ROOT / path.lstrip('/')).read_bytes(), [('Content-Type', {'.css':'text/css', '.js':'text/javascript', '.json':'application/json', '.png':'image/png', '.mp4':'video/mp4', '.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}[ext])]
     with connect() as db:
         if path == '/healthz' and method == 'GET':
             db.execute('SELECT 1')
