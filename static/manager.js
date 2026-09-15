@@ -144,7 +144,10 @@ async function allActivity(){
     }).join('');
     $('#activity').innerHTML=html||'<section class="empty activity-empty"><h3>Предложений пока нет</h3><p class="muted">Создайте предложение и сформируйте первую ссылку.</p></section>';
     document.querySelectorAll('[data-submission]').forEach(button=>button.onclick=()=>openSubmission(button.dataset.proposal,button.dataset.submission));
-    document.querySelectorAll('[data-revoke]').forEach(button=>button.onclick=async()=>{try{await api(`/api/proposals/${button.dataset.proposal}/revoke`,'POST',{id:button.dataset.revoke});await allActivity();notify('Ссылка отозвана');}catch(error){notify(error.message);}});
+    document.querySelectorAll('[data-revoke]').forEach(button=>button.onclick=async()=>{
+      if(!confirm('Отозвать эту ссылку? После отзыва клиент больше не сможет открыть предложение.'))return;
+      try{await api(`/api/proposals/${button.dataset.proposal}/revoke`,'POST',{id:button.dataset.revoke});await allActivity();notify('Ссылка отозвана');}catch(error){notify(error.message);}
+    });
   }catch(error){$('#activity').innerHTML=`<p class="error">${esc(error.message)}</p>`;}
 }
 try{await start(await api('/api/me'));}catch(e){if(e.status===401)login();else{app.textContent=e.message;}}
