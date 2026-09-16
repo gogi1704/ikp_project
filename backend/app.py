@@ -167,6 +167,9 @@ class Error(Exception):
 def audit(db, actor, event, entity):
     db.execute('INSERT INTO audit(actor,event,entity,created) VALUES(?,?,?,?)', (actor, event, entity, int(time.time())))
 
+DEFAULT_CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+CLIENT_PAGE_CSP = "default-src 'self'; script-src 'self' https://mc.yandex.ru https://yastatic.net; style-src 'self'; img-src 'self' data: https://mc.yandex.ru; connect-src 'self' https://mc.yandex.ru wss://mc.yandex.ru; frame-src https://mc.yandex.ru; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+
 def application(env, start_response):
     status, headers = 200, []
     try:
@@ -190,7 +193,8 @@ def application(env, start_response):
         import logging
         logging.exception('Request failed')
         status, body = 500, b'{"error":"Internal server error"}'
-    headers += [('Cache-Control', 'no-store'), ('X-Content-Type-Options', 'nosniff'), ('Referrer-Policy', 'no-referrer'), ('X-Frame-Options', 'DENY'), ('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"), ('Content-Length', str(len(body)))]
+    csp = CLIENT_PAGE_CSP if env.get('PATH_INFO', '/').startswith('/p/') else DEFAULT_CSP
+    headers += [('Cache-Control', 'no-store'), ('X-Content-Type-Options', 'nosniff'), ('Referrer-Policy', 'no-referrer'), ('X-Frame-Options', 'DENY'), ('Content-Security-Policy', csp), ('Content-Length', str(len(body)))]
     if SECURE:
         headers.append(('Strict-Transport-Security', 'max-age=31536000'))
     labels = {200:'OK',400:'Bad Request',401:'Unauthorized',403:'Forbidden',404:'Not Found',409:'Conflict',410:'Gone',413:'Payload Too Large',415:'Unsupported Media Type',429:'Too Many Requests',500:'Internal Server Error',503:'Service Unavailable'}

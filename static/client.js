@@ -1,4 +1,12 @@
 import {$,esc,date,api,notify,field,totals,sumHtml,optionDetails} from './shared.js';
+const METRIKA_ID=112717373;
+(function(m,e,t,r,i,k,a){
+  m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+  m[i].l=1*new Date();
+  for(var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r)return;}
+  k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a);
+})(window,document,'script','https://mc.yandex.ru/metrika/tag.js?id='+METRIKA_ID,'ym');
+window.ym(METRIKA_ID,'init',{ssr:true,webvisor:true,clickmap:true,ecommerce:'dataLayer',accurateTrackBounce:true,trackLinks:true});
 const token=location.pathname.split('/')[2], endpoint='/api/public/'+encodeURIComponent(token);
 let catalog,p,s,videoOpened=false;
 const app=$('#app');
@@ -15,7 +23,7 @@ function render(){
   introPlay.onclick=()=>{introVideo.currentTime=0;introVideo.muted=false;introVideo.play().catch(()=>{});};
   if(videoOpened){introPlay.querySelector('b').textContent='Смотреть видео';introPlay.hidden=false;}else{videoOpened=true;introVideo.play().catch(()=>{introPlay.querySelector('b').textContent='Включить видео со звуком';introPlay.hidden=false;});}
   $('#client-form').oninput=e=>{const el=e.target;if(!el.name)return;const parts=el.name.split('.');if(parts.length===3)s[parts[0]][parts[1]][parts[2]]=el.type==='checkbox'?el.checked:Number(el.value);else s[el.name]=el.type==='number'?Number(el.value):el.value;if(el.name==='count'){for(const o of catalog.addons){s.addons[o.code].qty=Math.min(s.addons[o.code].qty,s.count);const qty=document.querySelector(`[name="addons.${o.code}.qty"]`);if(qty){qty.max=s.count;qty.value=s.addons[o.code].qty;}}}updateSum();};
-  $('#submit').onclick=async()=>{if(!$('#client-form').reportValidity())return;const btn=$('#submit');btn.disabled=true;btn.textContent='Отправляем…';try{const r=await api(endpoint+'/submit','POST',s);$('#result').innerHTML=`<div class="consilium-access"><span class="eyebrow">ТЕСТОВЫЙ ДОСТУП</span><h3>«Консилиум» доступен</h3><p>Персональная ссылка создана для вашего предприятия. Тестовый доступ рассчитан на 5 дней.</p><a class="secondary consilium-link" href="${esc(r.consilium.url)}" target="_blank" rel="noopener noreferrer">Открыть «Консилиум»</a><small>При переходе по этой ссылке введённые данные не передаются в ООО «Человек».</small></div>`;notify(`Заявка отправлена. Номер: ${r.receipt}`);}catch(e){notify(e.message);}finally{btn.disabled=false;btn.textContent='Завершить и отправить';}};
+  $('#submit').onclick=async()=>{if(!$('#client-form').reportValidity())return;const btn=$('#submit');btn.disabled=true;btn.textContent='Отправляем…';try{const r=await api(endpoint+'/submit','POST',s);window.ym?.(METRIKA_ID,'reachGoal','submit',{inn:p.inn,company:p.company});$('#result').innerHTML=`<div class="consilium-access"><span class="eyebrow">ТЕСТОВЫЙ ДОСТУП</span><h3>«Консилиум» доступен</h3><p>Персональная ссылка создана для вашего предприятия. Тестовый доступ рассчитан на 5 дней.</p><a class="secondary consilium-link" href="${esc(r.consilium.url)}" target="_blank" rel="noopener noreferrer">Открыть «Консилиум»</a><small>При переходе по этой ссылке введённые данные не передаются в ООО «Человек».</small></div>`;notify(`Заявка отправлена. Номер: ${r.receipt}`);}catch(e){notify(e.message);}finally{btn.disabled=false;btn.textContent='Завершить и отправить';}};
   updateSum();
 }
 function option(g,o){
@@ -24,4 +32,4 @@ function option(g,o){
   return `<div class="option client-option ${recommended?'recommended-option':''}">${recommended?'<div class="recommend-badge"><span aria-hidden="true">★</span> Рекомендуем</div>':''}<div class="option-line"><label class="check"><input type="checkbox" name="${g}.${o.code}.on" ${st.on?'checked':''} ${fixed?'disabled aria-disabled="true"':''}><span>${esc(o.name)}${fixed?'<small class="fixed-note">Включено менеджером</small>':''}</span></label><strong class="rate">${Math.round(price).toLocaleString('ru-RU')} ₽<small>/ ${o.type==='qty'?'доп. чек-ап':'сотрудника'}</small></strong></div>${g==='addons'||o.type==='qty'?field(`${g}.${o.code}.qty`,o.type==='qty'?'Количество чек-апов · первые 2 бесплатно':'Количество сотрудников',st.qty,'number',`min="0" max="${g==='addons'?s.count:100000}" required`):''}${optionDetails(o,true)}</div>`;
 }
 function updateSum(){$('#sum').innerHTML=sumHtml(totals(p,s,catalog),s.count||1);}
-try{const results=await Promise.all([api('/static/catalog.json'),api(endpoint)]);catalog=results[0];({proposal:p,selection:s}=results[1]);render();}catch(e){app.innerHTML=`<section class="card empty"><h1>Предложение недоступно</h1><p>${esc(e.message)}</p><p class="muted">Обратитесь к вашему менеджеру за новой ссылкой.</p></section>`;}
+try{const results=await Promise.all([api('/static/catalog.json'),api(endpoint)]);catalog=results[0];({proposal:p,selection:s}=results[1]);render();window.ym?.(METRIKA_ID,'params',{inn:p.inn,company:p.company});}catch(e){app.innerHTML=`<section class="card empty"><h1>Предложение недоступно</h1><p>${esc(e.message)}</p><p class="muted">Обратитесь к вашему менеджеру за новой ссылкой.</p></section>`;}
