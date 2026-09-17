@@ -13,6 +13,7 @@ class AppTests(unittest.TestCase):
         self.consilium=patch('backend.app.consilium.create_access_link', return_value={'url':'https://consilium.example/ikp/test','trialDays':5})
         self.consilium.start()
         app.DB=str(Path(self.tmp.name)/'test.sqlite3')
+        app.ADMIN_PASSWORD='admin-test-password'
         app.init_db()
         app.create_user('manager@example.test','long-test-password')
         self.cookie=''
@@ -260,8 +261,7 @@ class AppTests(unittest.TestCase):
             os.environ.pop('IKP_EXISTING',None)
 
     def admin_login(self):
-        app.create_user('admin@example.test','admin-test-password',role='admin')
-        self.assertEqual(self.call('/api/login','POST',{'login':'admin@example.test','password':'admin-test-password'})[0],200)
+        self.assertEqual(self.call('/api/login','POST',{'password':app.ADMIN_PASSWORD})[0],200)
 
     def test_admin_boundary_and_creation(self):
         self.assertEqual(self.call('/api/admin/managers')[0],403)
@@ -280,6 +280,44 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.call('/api/proposals')[0],200)
         self.assertEqual(self.call('/api/proposals','POST',{})[0],403)
         self.assertEqual(self.call('/api/admin/managers')[0],403)
+
+    def test_admin_activity_lists_all_managers_data(self):
+        p1,token1=self.published()
+        view1=self.call('/api/public/'+token1,authenticated=False)[1]
+        self.call('/api/public/'+token1+'/submit','POST',view1['selection'],False)
+        self.admin_login()
+        data={'login':'second_manager','password':'second-manager-password','can_edit':True,'can_publish':True}
+        self.assertEqual(self.call('/api/admin/managers','POST',data)[0],200)
+        self.call('/api/login','POST',{'login':'second_manager','password':'second-manager-password'})
+        p2,token2=self.published()
+        self.admin_login()
+        self.assertEqual(self.call('/api/proposals')[0],403)
+        status,overview=self.call('/api/admin/activity')
+        self.assertEqual(status,200)
+        self.assertEqual(overview['linkCount'],2)
+        self.assertEqual(overview['submissionCount'],1)
+        owners={g['id']:g['ownerLogin'] for g in overview['proposals']}
+        self.assertEqual(owners[p1['id']],'manager@example.test')
+        self.assertEqual(owners[p2['id']],'second_manager')
+        with_submission=next(g for g in overview['proposals'] if g['id']==p1['id'])
+        self.assertEqual(len(with_submission['submissions']),1)
+        self.assertEqual(len(with_submission['links']),1)
+        self.call('/api/login','POST',{'login':'manager@example.test','password':'long-test-password'})
+        self.assertEqual(self.call('/api/admin/activity')[0],403)
+        self.assertEqual(self.call('/api/admin/activity',authenticated=False)[0],401)
+
+    def test_admin_login_by_password_only(self):
+        app.ADMIN_PASSWORD=''
+        self.assertEqual(self.call('/api/login','POST',{'password':'admin-test-password'})[0],401)
+        app.ADMIN_PASSWORD='admin-test-password'
+        status,body=self.call('/api/login','POST',{'password':'admin-test-password'})
+        self.assertEqual(status,200)
+        self.assertEqual(body['role'],'admin')
+        status,body=self.call('/api/login','POST',{'password':'wrong-password'})
+        self.assertEqual(status,401)
+        self.assertEqual(body['error'],'Неверный пароль')
+        self.assertEqual(self.call('/api/login','POST',{'password':'long-test-password'})[0],401)
+        self.assertEqual(self.call('/api/login','POST',{'login':'manager@example.test','password':'long-test-password'})[0],200)
 
     def test_disable_and_password_reset_revoke_sessions(self):
         manager_cookie,manager_csrf=self.cookie,self.csrf

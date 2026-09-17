@@ -31,7 +31,7 @@ mkdir -p data backups
 sudo chown -R 1000:1000 data backups
 ```
 
-В `.env.production` установить настоящий `DADATA_API_KEY`. `PUBLIC_ORIGIN` должен остаться равным `https://kp.cheloveckmed.ru`.
+В `.env.production` установить настоящий `DADATA_API_KEY` и `ADMIN_PASSWORD` (единый пароль входа в `/admin`, без логина — им может пользоваться любой администратор). `PUBLIC_ORIGIN` должен остаться равным `https://kp.cheloveckmed.ru`.
 
 ## 4. Изолированный запуск
 
@@ -43,11 +43,7 @@ docker-compose -p cheloveckmed-ikp -f compose.production.yml ps
 curl --fail http://127.0.0.1:18080/healthz
 ```
 
-Создать первого администратора интерактивно:
-
-```bash
-docker-compose -p cheloveckmed-ikp -f compose.production.yml exec app python run.py --create-admin admin
-```
+Отдельного аккаунта администратора создавать не нужно — при первом запуске приложение само заводит служебную запись администратора; вход в `/admin` защищён только паролем из `ADMIN_PASSWORD` (без логина).
 
 ## 5. Отдельный виртуальный хост Nginx
 

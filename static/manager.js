@@ -1,4 +1,4 @@
-import {$,esc,rub,date,api,setCsrf,notify,field,totals,sumHtml,optionDetails} from './shared.js';
+import {$,esc,rub,date,api,setCsrf,notify,field,totals,sumHtml,optionDetails,submissionDetail} from './shared.js';
 let rights={can_edit:true,can_publish:true};
 let catalog, rows=[], current=null, dirty=false, busy=false, saving=false, activityGroups=[];
 const app=$('#app');
@@ -29,25 +29,11 @@ function managerAddonOption(o,p){
   const st=p.addons[o.code];
   return `<div class="option manager-addon"><div class="option-line"><label class="check"><input type="checkbox" name="addons.${o.code}.on" ${st.on?'checked':''}><span>${esc(o.name)}</span></label><label class="price-input"><input class="money-input" type="number" name="addons.${o.code}.price" value="${Math.round(st.price)}" min="0" max="10000000" step="100" required aria-label="Цена: ${esc(o.name)}"><small>₽ / сотрудника</small></label></div>${field(`addons.${o.code}.qty`,'Количество сотрудников',st.qty,'number',`min="0" max="${p.count}" required class="addon-qty"`)}</div>`;
 }
-function submissionServiceRows(item,group){
-  const selected=catalog[group].filter(o=>item.body[group]?.[o.code]?.on);
-  if(!selected.length)return '<p class="muted small submission-none">Не выбрано</p>';
-  return selected.map(o=>{
-    const state=item.body[group][o.code],price=group==='addons'?item.proposal?.addons?.[o.code]?.price??o.price:item.proposal?.[group]?.[o.code]?.price??o.defaultPrice??0;
-    const selectedQty=Number(state.qty??item.body.count),billableQty=group==='addons'?selectedQty:o.type==='qty'?Math.max(0,selectedQty-2):item.body.count;
-    const qtyText=o.type==='qty'?`${selectedQty} шт. · первые 2 бесплатно`:group==='addons'?`${selectedQty} сотрудников`:`${item.body.count} сотрудников`;
-    return `<div class="submission-service"><div><strong>${esc(o.name)}</strong><small>${qtyText} · ${Math.round(price).toLocaleString('ru-RU')} ₽ / ${o.type==='qty'?'доп. чек-ап':'сотрудника'}</small></div><b>${rub(Math.round(price*100)*billableQty)}</b></div>`;
-  }).join('');
-}
-function submissionDetail(item){
-  const proposal=item.proposal||{},body=item.body,basePrice=proposal.basePrice??0;
-  return `<div class="submission-meta"><div><small>Предприятие</small><strong>${esc(proposal.company||'Не указано')}</strong></div><div><small>ИНН</small><strong>${esc(proposal.inn||'Не указан')}</strong></div><div><small>Руководитель</small><strong>${esc(proposal.lpr||'Не указан')}</strong></div><div><small>Отправлена</small><strong>${new Date(item.created*1000).toLocaleString('ru-RU')}</strong></div></div><section class="submission-section"><h3>Медицинский осмотр</h3><div class="submission-service submission-base"><div><strong>Основная услуга</strong><small>${body.count} сотрудников · ${Math.round(basePrice).toLocaleString('ru-RU')} ₽ / сотрудника</small></div><b>${rub(item.totals.base)}</b></div><h4>Дополнительные услуги к медицинскому осмотру</h4>${submissionServiceRows(item,'addons')}</section><section class="submission-section"><h3>Корпоративные преимущества</h3>${submissionServiceRows(item,'corp')}</section><section class="submission-section"><h3>Забота о здоровье сотрудников</h3>${submissionServiceRows(item,'health')}</section><section class="submission-section"><h3>Организация медосмотра</h3><dl class="submission-organization"><div><dt>Адрес</dt><dd>${esc(body.address||'Не указан')}</dd></div><div><dt>Предпочтительные даты</dt><dd>${esc(body.dates||'Не указаны')}</dd></div><div><dt>Комментарий</dt><dd>${esc(body.comments||'Нет комментария')}</dd></div></dl></section><section class="submission-section submission-total"><h3>Итоговая стоимость</h3>${sumHtml(item.totals,body.count||1)}</section><p class="submission-id">Номер заявки: ${esc(item.id)}</p>`;
-}
 function openSubmission(proposalId,submissionId){
   const group=activityGroups.find(item=>item.id===proposalId),submission=group?.submissions.find(item=>item.id===submissionId);
   if(!submission)return notify('Не удалось открыть заявку');
   $('#submission-title').textContent=`Заявка · ${group.company||submission.proposal?.company||'предприятие'}`;
-  $('#submission-detail').innerHTML=submissionDetail(submission);
+  $('#submission-detail').innerHTML=submissionDetail(submission,catalog);
   $('#submission-dialog').showModal();
 }
 function syncOptionControls(option){

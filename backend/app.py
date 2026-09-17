@@ -51,6 +51,7 @@ from backend import company_suggestions, consilium
 DB = os.environ.get('DATABASE_PATH', str(ROOT / 'data' / 'ikp.sqlite3'))
 ORIGIN = os.environ.get('PUBLIC_ORIGIN', 'http://localhost:8000').rstrip('/')
 SECURE = ORIGIN.startswith('https://')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '').strip()
 
 @contextmanager
 def connect():
@@ -92,6 +93,8 @@ def init_db():
             db.execute('ALTER TABLE submissions_v8 RENAME TO submissions')
         db.execute('CREATE INDEX IF NOT EXISTS submissions_link_id_idx ON submissions(link_id)')
         db.execute('PRAGMA user_version=8')
+        if not db.execute("SELECT 1 FROM users WHERE role='admin'").fetchone():
+            insert_user(db, 'admin', secrets.token_urlsafe(32), role='admin')
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -102,8 +105,8 @@ def password_hash(password, salt):
 def validate_credentials(login, password):
     if not isinstance(login, str) or not re.fullmatch(r'[a-zA-Z0-9_.@+\-]{3,254}', login.strip()):
         raise ValueError('Логин: от 3 до 254 символов, латинские буквы, цифры и знаки _ . - @ +')
-    if not isinstance(password, str) or not 12 <= len(password) <= 256:
-        raise ValueError('Пароль должен содержать от 12 до 256 символов')
+    if not isinstance(password, str) or not 6 <= len(password) <= 256:
+        raise ValueError('Пароль должен содержать от 6 до 256 символов')
     return login.strip().lower()
 
 def insert_user(db, login, password, role='manager', can_edit=True, can_publish=True, profile=None):
@@ -238,17 +241,26 @@ def route(env):
                 raise Error(429, 'Слишком много попыток. Повторите через 15 минут')
             db.execute('INSERT INTO attempts VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1', (key, now + 900))
             db.commit()
-            u = db.execute('SELECT * FROM users WHERE login=?', (str(data.get('login', '')).lower().strip(),)).fetchone()
-            salt = u['salt'] if u else '00'*16
-            candidate = password_hash(str(data.get('password','')), salt)
-            if not u or not hmac.compare_digest(candidate, u['password']) or not u['active']:
-                raise Error(401, 'Неверный логин или пароль')
-            # Serialize login with administrator changes and recheck credentials.
-            db.execute('BEGIN IMMEDIATE')
-            fresh = db.execute('SELECT * FROM users WHERE id=?', (u['id'],)).fetchone()
-            if not fresh['active'] or fresh['password'] != u['password']:
-                raise Error(401, 'Неверный логин или пароль')
-            u = fresh
+            login = str(data.get('login', '')).lower().strip()
+            password = str(data.get('password', ''))
+            if not login:
+                if not ADMIN_PASSWORD or not hmac.compare_digest(password, ADMIN_PASSWORD):
+                    raise Error(401, 'Неверный пароль')
+                u = db.execute("SELECT * FROM users WHERE role='admin' ORDER BY rowid LIMIT 1").fetchone()
+                if not u or not u['active']:
+                    raise Error(401, 'Неверный пароль')
+            else:
+                u = db.execute('SELECT * FROM users WHERE login=?', (login,)).fetchone()
+                salt = u['salt'] if u else '00'*16
+                candidate = password_hash(password, salt)
+                if not u or not hmac.compare_digest(candidate, u['password']) or not u['active']:
+                    raise Error(401, 'Неверный логин или пароль')
+                # Serialize login with administrator changes and recheck credentials.
+                db.execute('BEGIN IMMEDIATE')
+                fresh = db.execute('SELECT * FROM users WHERE id=?', (u['id'],)).fetchone()
+                if not fresh['active'] or fresh['password'] != u['password']:
+                    raise Error(401, 'Неверный логин или пароль')
+                u = fresh
             token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
             db.execute('DELETE FROM sessions WHERE expires<?', (now,))
             db.execute('INSERT INTO sessions VALUES(?,?,?,?)', (digest(token),u['id'],csrf,now+28800))
@@ -313,6 +325,19 @@ def route(env):
                     db.execute('UPDATE users SET active=? WHERE id=?', (int(active), target))
                     audit(db, uid, 'manager_created', target)
                     return {'id':target}, []
+                if path == '/api/admin/activity' and method == 'GET':
+                    groups = []
+                    link_count = submission_count = 0
+                    rows = db.execute("SELECT p.id,p.owner,p.body,p.created,p.updated,u.login AS owner_login,u.first_name,u.last_name FROM proposals p JOIN users u ON u.id=p.owner ORDER BY p.updated DESC").fetchall()
+                    for row in rows:
+                        body = json.loads(row['body'])
+                        links = [dict(item) for item in db.execute('SELECT id,revoked,created,viewed FROM links WHERE proposal_id=? ORDER BY created DESC', (row['id'],))]
+                        submissions = [submission_from_row(item) for item in db.execute('SELECT s.*,l.snapshot AS proposal_snapshot FROM submissions s JOIN links l ON s.link_id=l.id WHERE l.proposal_id=? ORDER BY s.created DESC', (row['id'],))]
+                        link_count += len(links)
+                        submission_count += len(submissions)
+                        owner_name = ' '.join(part for part in [row['first_name'], row['last_name']] if part)
+                        groups.append({'id':row['id'],'owner':row['owner'],'ownerLogin':row['owner_login'],'ownerName':owner_name,'company':body.get('company',''),'inn':body.get('inn',''),'lpr':body.get('lpr',''),'created':row['created'],'updated':row['updated'],'links':links,'submissions':submissions})
+                    return {'proposals':groups,'linkCount':link_count,'submissionCount':submission_count}, []
                 parts = path.split('/')
                 if len(parts) in (5, 6) and parts[3] == 'managers':
                     target = parts[4]
