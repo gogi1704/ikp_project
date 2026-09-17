@@ -83,6 +83,9 @@ def init_db():
         for name, definition in [('role', "TEXT NOT NULL DEFAULT 'manager'"), ('active', 'INTEGER NOT NULL DEFAULT 1'), ('can_edit', 'INTEGER NOT NULL DEFAULT 1'), ('can_publish', 'INTEGER NOT NULL DEFAULT 1'), ('first_name', "TEXT NOT NULL DEFAULT ''"), ('last_name', "TEXT NOT NULL DEFAULT ''"), ('phone', "TEXT NOT NULL DEFAULT ''"), ('messenger_phone', "TEXT NOT NULL DEFAULT ''"), ('photo', "TEXT NOT NULL DEFAULT ''"), ('messengers', "TEXT NOT NULL DEFAULT '[]'")]:
             if name not in columns:
                 db.execute(f'ALTER TABLE users ADD COLUMN {name} {definition}')
+        link_columns = {r['name'] for r in db.execute('PRAGMA table_info(links)')}
+        if 'plain_token' not in link_columns:
+            db.execute('ALTER TABLE links ADD COLUMN plain_token TEXT')
         version = db.execute('PRAGMA user_version').fetchone()[0]
         if version < 7:
             db.execute("UPDATE users SET phone=?, messenger_phone=? WHERE role='manager'", (DEFAULT_MANAGER_PHONE, DEFAULT_MANAGER_MESSENGER_PHONE))
@@ -162,6 +165,15 @@ def submission_from_row(row):
     if snapshot:
         item['proposal'] = json.loads(snapshot)
     return item
+
+def links_for(db, pid):
+    links = []
+    for row in db.execute('SELECT id,revoked,created,viewed,plain_token FROM links WHERE proposal_id=? ORDER BY created DESC', (pid,)):
+        link = dict(row)
+        token = link.pop('plain_token')
+        link['url'] = ORIGIN + '/p/' + token if token else None
+        links.append(link)
+    return links
 
 class Error(Exception):
     def __init__(self, status, message):
@@ -331,7 +343,7 @@ def route(env):
                     rows = db.execute("SELECT p.id,p.owner,p.body,p.created,p.updated,u.login AS owner_login,u.first_name,u.last_name FROM proposals p JOIN users u ON u.id=p.owner ORDER BY p.updated DESC").fetchall()
                     for row in rows:
                         body = json.loads(row['body'])
-                        links = [dict(item) for item in db.execute('SELECT id,revoked,created,viewed FROM links WHERE proposal_id=? ORDER BY created DESC', (row['id'],))]
+                        links = links_for(db, row['id'])
                         submissions = [submission_from_row(item) for item in db.execute('SELECT s.*,l.snapshot AS proposal_snapshot FROM submissions s JOIN links l ON s.link_id=l.id WHERE l.proposal_id=? ORDER BY s.created DESC', (row['id'],))]
                         link_count += len(links)
                         submission_count += len(submissions)
@@ -391,7 +403,7 @@ def route(env):
                 link_count = submission_count = 0
                 for row in db.execute('SELECT id,body,created,updated FROM proposals WHERE owner=? ORDER BY updated DESC', (uid,)):
                     body = json.loads(row['body'])
-                    links = [dict(item) for item in db.execute('SELECT id,revoked,created,viewed FROM links WHERE proposal_id=? ORDER BY created DESC', (row['id'],))]
+                    links = links_for(db, row['id'])
                     submissions = [submission_from_row(item) for item in db.execute('SELECT s.*,l.snapshot AS proposal_snapshot FROM submissions s JOIN links l ON s.link_id=l.id WHERE l.proposal_id=? ORDER BY s.created DESC', (row['id'],))]
                     link_count += len(links)
                     submission_count += len(submissions)
@@ -432,14 +444,14 @@ def route(env):
                     audit(db,uid,'deleted',pid)
                     return {}, []
                 if method == 'GET' and len(parts) == 5 and parts[4] == 'activity':
-                    links = [dict(r) for r in db.execute('SELECT id,revoked,created,viewed FROM links WHERE proposal_id=? ORDER BY created DESC',(pid,))]
+                    links = links_for(db, pid)
                     subs = [submission_from_row(r) for r in db.execute('SELECT s.*,l.snapshot AS proposal_snapshot FROM submissions s JOIN links l ON s.link_id=l.id WHERE l.proposal_id=?',(pid,))]
                     return {'links':links,'submissions':subs}, []
                 if method == 'POST' and len(parts) == 5 and parts[4] == 'publish':
                     p = apply_manager_profile(proposal(json.loads(row['body']),True), session)
                     token = public_link_slug(p) + '-' + secrets.token_urlsafe(32)
                     lid = secrets.token_hex(16)
-                    db.execute('INSERT INTO links(id,proposal_id,token,snapshot,expires,created) VALUES(?,?,?,?,?,?)',(lid,pid,digest(token),json.dumps(p),0,now))
+                    db.execute('INSERT INTO links(id,proposal_id,token,plain_token,snapshot,expires,created) VALUES(?,?,?,?,?,?,?)',(lid,pid,digest(token),token,json.dumps(p),0,now))
                     audit(db,uid,'published',pid)
                     return {'url':ORIGIN+'/p/'+token}, []
                 if method == 'POST' and len(parts) == 5 and parts[4] == 'revoke':

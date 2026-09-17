@@ -1,4 +1,4 @@
-import {$,esc,rub,date,api,setCsrf,notify,field,totals,sumHtml,optionDetails,submissionDetail} from './shared.js';
+import {$,esc,rub,date,api,setCsrf,notify,field,totals,sumHtml,optionDetails,submissionDetail,linkActions,wireLinkCopyButtons} from './shared.js';
 let rights={can_edit:true,can_publish:true};
 let catalog, rows=[], current=null, dirty=false, busy=false, saving=false, activityGroups=[];
 const app=$('#app');
@@ -124,11 +124,12 @@ async function allActivity(){
     const summary=$('#activity-summary');
     if(summary)summary.textContent=`${overview.linkCount} ссылок · ${overview.submissionCount} заявок`;
     const html=overview.proposals.map(group=>{
-      const links=group.links.map(link=>`<div class="activity activity-row"><div><span class="pill ${link.revoked?'':'green'}">${link.revoked?'Отозвана':link.viewed?'Просмотрена':'Опубликована'}</span><small>Создана ${date(link.created)}${link.viewed?' · просмотрена '+date(link.viewed):' · ещё не просмотрена'}</small></div>${!link.revoked&&rights.can_publish?`<button class="text-button" data-revoke="${link.id}" data-proposal="${group.id}">Отозвать</button>`:''}</div>`).join('');
+      const links=group.links.map(link=>`<div class="activity activity-row"><div><span class="pill ${link.revoked?'':'green'}">${link.revoked?'Отозвана':link.viewed?'Просмотрена':'Опубликована'}</span><small>Создана ${date(link.created)}${link.viewed?' · просмотрена '+date(link.viewed):' · ещё не просмотрена'}</small></div><div class="link-actions">${linkActions(link)}${!link.revoked&&rights.can_publish?`<button class="text-button" data-revoke="${link.id}" data-proposal="${group.id}">Отозвать</button>`:''}</div></div>`).join('');
       const submissions=group.submissions.map(item=>{const selected=['corp','health','addons'].reduce((total,g)=>total+catalog[g].filter(o=>item.body[g]?.[o.code]?.on).length,0);return `<button type="button" class="receipt activity-receipt submission-open" data-proposal="${group.id}" data-submission="${item.id}"><span><strong>Заявка от ${date(item.created)}</strong><small>${item.body.count} сотрудников · ${selected} выбранных услуг</small></span><span><b>${rub(item.totals.total)}</b><small>Открыть полностью</small></span></button>`;}).join('');
       return `<section class="activity-proposal"><div class="activity-proposal-head"><div><h3>${esc(group.company||'Предложение без названия')}</h3>${group.lpr?`<p>Для ${esc(group.lpr)}</p>`:''}</div><span>${group.links.length} ссылок · ${group.submissions.length} заявок</span></div><div class="activity-columns"><div><h4>Ссылки</h4>${links||'<p class="muted small">Ссылки ещё не создавались</p>'}</div><div><h4>Заявки</h4>${submissions||'<p class="muted small">Заявок пока нет</p>'}</div></div></section>`;
     }).join('');
     $('#activity').innerHTML=html||'<section class="empty activity-empty"><h3>Предложений пока нет</h3><p class="muted">Создайте предложение и сформируйте первую ссылку.</p></section>';
+    wireLinkCopyButtons($('#activity'));
     document.querySelectorAll('[data-submission]').forEach(button=>button.onclick=()=>openSubmission(button.dataset.proposal,button.dataset.submission));
     document.querySelectorAll('[data-revoke]').forEach(button=>button.onclick=async()=>{
       if(!confirm('Отозвать эту ссылку? После отзыва клиент больше не сможет открыть предложение.'))return;

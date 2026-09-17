@@ -168,6 +168,14 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.call('/api/proposals/'+p['id']+'/revoke','POST',{'id':lid})[0],200)
         self.assertEqual(self.call('/api/public/'+token,authenticated=False)[0],410)
 
+    def test_activity_exposes_reopenable_link_url(self):
+        p,token=self.published()
+        link=self.call('/api/proposals/'+p['id']+'/activity')[1]['links'][0]
+        self.assertEqual(link['url'],app.ORIGIN+'/p/'+token)
+        with app.connect() as db: db.execute('UPDATE links SET plain_token=NULL WHERE id=?',(link['id'],))
+        link=self.call('/api/proposals/'+p['id']+'/activity')[1]['links'][0]
+        self.assertIsNone(link['url'])
+
     def test_public_link_contains_inn_or_company_slug_and_keeps_secret(self):
         status, with_inn = self.call('/api/proposals','POST',{'company':'ООО «Ромашка»','inn':'7707083893','lpr':'Иван Иванов'})
         self.assertEqual(status,200)
