@@ -114,6 +114,24 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response['headers']['Content-Type'],'video/mp4')
         self.assertTrue(body.startswith(b'\x00\x00\x00'))
 
+    def test_printable_proposal_module_is_served(self):
+        assets={
+            '/static/proposal-document.js':('text/javascript',b'buildProposalDocument'),
+            '/static/proposal-document.css':('text/css',b'.print-toolbar'),
+            '/static/vendor/html2canvas.min.js':('text/javascript',b'html2canvas'),
+            '/static/vendor/jspdf.umd.min.js':('text/javascript',b'jsPDF'),
+        }
+        for path,(content_type,marker) in assets.items():
+            with self.subTest(path=path):
+                env={'REQUEST_METHOD':'GET','PATH_INFO':path,'wsgi.input':io.BytesIO(b''),'REMOTE_ADDR':'127.0.0.1'}
+                response={}
+                def start(status,headers):
+                    response['status']=int(status.split()[0]);response['headers']=dict(headers)
+                body=b''.join(app.application(env,start))
+                self.assertEqual(response['status'],200)
+                self.assertEqual(response['headers']['Content-Type'],content_type)
+                self.assertIn(marker,body)
+
     def test_client_materials_are_downloadable(self):
         materials={
             '/static/materials/onco-assistance.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation',
