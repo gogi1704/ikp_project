@@ -118,6 +118,7 @@ class AppTests(unittest.TestCase):
         assets={
             '/static/proposal-document.js':('text/javascript',b'buildProposalDocument'),
             '/static/proposal-document.css':('text/css',b'.print-toolbar'),
+            '/static/signature-larisa.png':('image/png',b'\x89PNG'),
             '/static/vendor/html2canvas.min.js':('text/javascript',b'html2canvas'),
             '/static/vendor/jspdf.umd.min.js':('text/javascript',b'jsPDF'),
         }
