@@ -1,4 +1,5 @@
-import {$,esc,rub,date,api,setCsrf,notify,field,totals,sumHtml,optionDetails,submissionDetail,linkActions,wireLinkCopyButtons} from './shared.js';
+import {$,esc,rub,date,api,setCsrf,notify,field,totals,sumHtml,optionDetails,submissionDetail,linkActions,wireLinkCopyButtons,proposalSelection} from './shared.js';
+import {openProposalDocument} from './proposal-document.js?v=16';
 let rights={can_edit:true,can_publish:true};
 let catalog, rows=[], current=null, dirty=false, busy=false, saving=false, activityGroups=[];
 const app=$('#app');
@@ -15,7 +16,7 @@ async function start(me){
   $('#logout').onclick=async()=>{if(dirty&&!confirm('Выйти без сохранения изменений?'))return;await api('/api/logout','POST');dirty=false;location.reload();};
   current=rows[0]||null;render();
 }
-function selection(p){return {count:p.count,corp:p.corp,health:Object.fromEntries(Object.entries(p.health).map(([k,v])=>[k,{...v,qty:2}])),addons:Object.fromEntries(catalog.addons.map(o=>[o.code,{...(p.addons?.[o.code]||{on:true,qty:0,price:o.price})}]))};}
+function selection(p){return proposalSelection(p,catalog);}
 function managerSummary(p){
   const name=[p.mopFirstName,p.mopLastName].filter(Boolean).join(' ')||'Имя не заполнено';
   const messengers=(p.mopMessengers||[]).map(item=>`<span class="pill">${esc(item.label)}: ${esc(item.value)}</span>`).join('');
@@ -81,7 +82,7 @@ function render(){
   };
   setupInnSuggestions();
   $('#save').onclick=()=>save().catch(e=>notify(e.message));
-  $('#publish').onclick=async()=>{if(busy)return;busy=true;$('#publish').disabled=true;try{if(rights.can_edit)await save();const r=await api(`/api/proposals/${current.id}/publish`,'POST');$('#published').innerHTML=`<label class="field">Персональная ссылка<input id="public-url" readonly value="${esc(r.url)}"></label><button class="secondary" id="copy">Скопировать ссылку</button>`;$('#copy').onclick=async()=>{try{await navigator.clipboard.writeText(r.url);notify('Ссылка скопирована');}catch{$('#public-url').select();notify('Скопируйте выделенную ссылку');}};await allActivity();notify('Предложение опубликовано');}catch(e){notify(e.message);}finally{busy=false;$('#publish').disabled=false;}};
+  $('#publish').onclick=async()=>{if(busy)return;busy=true;$('#publish').disabled=true;try{if(rights.can_edit)await save();const r=await api(`/api/proposals/${current.id}/publish`,'POST');const publishedProposal=r.proposal||current.body;$('#published').innerHTML=`<label class="field">Персональная ссылка<input id="public-url" readonly value="${esc(r.url)}"></label><button class="secondary" id="copy">Скопировать ссылку</button><button class="secondary" id="print-published">Открыть документ</button>`;$('#copy').onclick=async()=>{try{await navigator.clipboard.writeText(r.url);notify('Ссылка скопирована');}catch{$('#public-url').select();notify('Скопируйте выделенную ссылку');}};$('#print-published').onclick=()=>openProposalDocument(publishedProposal,selection(publishedProposal),catalog);await allActivity();notify('Предложение опубликовано');}catch(e){notify(e.message);}finally{busy=false;$('#publish').disabled=false;}};
   updateSum();
   $('#delete-open').onclick=()=>{$('#delete-open').hidden=true;$('#delete-confirm').hidden=false;};
   $('#delete-no').onclick=()=>{$('#delete-confirm').hidden=true;$('#delete-open').hidden=false;};
@@ -124,13 +125,15 @@ async function allActivity(){
     const summary=$('#activity-summary');
     if(summary)summary.textContent=`${overview.linkCount} ссылок · ${overview.submissionCount} заявок`;
     const html=overview.proposals.map(group=>{
-      const links=group.links.map(link=>`<div class="activity activity-row"><div><span class="pill ${link.revoked?'':'green'}">${link.revoked?'Отозвана':link.viewed?'Просмотрена':'Опубликована'}</span><small>Создана ${date(link.created)}${link.viewed?' · просмотрена '+date(link.viewed):' · ещё не просмотрена'}</small></div><div class="link-actions">${linkActions(link)}${!link.revoked&&rights.can_publish?`<button class="text-button" data-revoke="${link.id}" data-proposal="${group.id}">Отозвать</button>`:''}</div></div>`).join('');
-      const submissions=group.submissions.map(item=>{const selected=['corp','health','addons'].reduce((total,g)=>total+catalog[g].filter(o=>item.body[g]?.[o.code]?.on).length,0);return `<button type="button" class="receipt activity-receipt submission-open" data-proposal="${group.id}" data-submission="${item.id}"><span><strong>Заявка от ${date(item.created)}</strong><small>${item.body.count} сотрудников · ${selected} выбранных услуг</small></span><span><b>${rub(item.totals.total)}</b><small>Открыть полностью</small></span></button>`;}).join('');
+      const links=group.links.map(link=>`<div class="activity activity-row"><div><span class="pill ${link.revoked?'':'green'}">${link.revoked?'Отозвана':link.viewed?'Просмотрена':'Опубликована'}</span><small>Создана ${date(link.created)}${link.viewed?' · просмотрена '+date(link.viewed):' · ещё не просмотрена'}</small></div><div class="link-actions">${linkActions(link)}<button type="button" class="text-button" data-print-link="${link.id}" data-proposal="${group.id}">Печать</button>${!link.revoked&&rights.can_publish?`<button class="text-button" data-revoke="${link.id}" data-proposal="${group.id}">Отозвать</button>`:''}</div></div>`).join('');
+      const submissions=group.submissions.map(item=>{const selected=['corp','health','addons'].reduce((total,g)=>total+catalog[g].filter(o=>item.body[g]?.[o.code]?.on).length,0);return `<div class="activity-submission-row"><button type="button" class="receipt activity-receipt submission-open" data-proposal="${group.id}" data-submission="${item.id}"><span><strong>Заявка от ${date(item.created)}</strong><small>${item.body.count} сотрудников · ${selected} выбранных услуг</small></span><span><b>${rub(item.totals.total)}</b><small>Открыть полностью</small></span></button><button type="button" class="text-button activity-print" data-print-submission="${item.id}" data-proposal="${group.id}">Печать</button></div>`;}).join('');
       return `<section class="activity-proposal"><div class="activity-proposal-head"><div><h3>${esc(group.company||'Предложение без названия')}</h3>${group.lpr?`<p>Для ${esc(group.lpr)}</p>`:''}</div><span>${group.links.length} ссылок · ${group.submissions.length} заявок</span></div><div class="activity-columns"><div><h4>Ссылки</h4>${links||'<p class="muted small">Ссылки ещё не создавались</p>'}</div><div><h4>Заявки</h4>${submissions||'<p class="muted small">Заявок пока нет</p>'}</div></div></section>`;
     }).join('');
     $('#activity').innerHTML=html||'<section class="empty activity-empty"><h3>Предложений пока нет</h3><p class="muted">Создайте предложение и сформируйте первую ссылку.</p></section>';
     wireLinkCopyButtons($('#activity'));
     document.querySelectorAll('[data-submission]').forEach(button=>button.onclick=()=>openSubmission(button.dataset.proposal,button.dataset.submission));
+    document.querySelectorAll('[data-print-link]').forEach(button=>button.onclick=()=>{const group=activityGroups.find(item=>item.id===button.dataset.proposal),link=group?.links.find(item=>item.id===button.dataset.printLink);if(!link?.proposal)return notify('Не удалось открыть документ');openProposalDocument(link.proposal,selection(link.proposal),catalog);});
+    document.querySelectorAll('[data-print-submission]').forEach(button=>button.onclick=()=>{const group=activityGroups.find(item=>item.id===button.dataset.proposal),item=group?.submissions.find(entry=>entry.id===button.dataset.printSubmission);if(!item?.proposal)return notify('Не удалось открыть документ');openProposalDocument(item.proposal,item.body,catalog);});
     document.querySelectorAll('[data-revoke]').forEach(button=>button.onclick=async()=>{
       if(!confirm('Отозвать эту ссылку? После отзыва клиент больше не сможет открыть предложение.'))return;
       try{await api(`/api/proposals/${button.dataset.proposal}/revoke`,'POST',{id:button.dataset.revoke});await allActivity();notify('Ссылка отозвана');}catch(error){notify(error.message);}

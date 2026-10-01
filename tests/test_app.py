@@ -44,6 +44,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(status,200)
         status,l=self.call('/api/proposals/'+p['id']+'/publish','POST')
         self.assertEqual(status,200)
+        self.assertEqual(l['proposal']['company'],p['body']['company'])
         return p,l['url'].split('/p/')[1]
 
     def test_full_flow_snapshot_and_multiple_submissions(self):
@@ -191,9 +192,12 @@ class AppTests(unittest.TestCase):
         p,token=self.published()
         link=self.call('/api/proposals/'+p['id']+'/activity')[1]['links'][0]
         self.assertEqual(link['url'],app.ORIGIN+'/p/'+token)
+        self.assertEqual(link['proposal']['company'],p['body']['company'])
+        self.assertEqual(link['proposal']['basePrice'],p['body']['basePrice'])
         with app.connect() as db: db.execute('UPDATE links SET plain_token=NULL WHERE id=?',(link['id'],))
         link=self.call('/api/proposals/'+p['id']+'/activity')[1]['links'][0]
         self.assertIsNone(link['url'])
+        self.assertEqual(link['proposal']['company'],p['body']['company'])
 
     def test_public_link_contains_inn_or_company_slug_and_keeps_secret(self):
         status, with_inn = self.call('/api/proposals','POST',{'company':'ООО «Ромашка»','inn':'7707083893','lpr':'Иван Иванов'})
@@ -329,6 +333,7 @@ class AppTests(unittest.TestCase):
         with_submission=next(g for g in overview['proposals'] if g['id']==p1['id'])
         self.assertEqual(len(with_submission['submissions']),1)
         self.assertEqual(len(with_submission['links']),1)
+        self.assertEqual(with_submission['links'][0]['proposal']['company'],p1['body']['company'])
         self.call('/api/login','POST',{'login':'manager@example.test','password':'long-test-password'})
         self.assertEqual(self.call('/api/admin/activity')[0],403)
         self.assertEqual(self.call('/api/admin/activity',authenticated=False)[0],401)

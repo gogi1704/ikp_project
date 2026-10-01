@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {rub,totals} from '../static/shared.js';
+import {rub,totals,proposalSelection} from '../static/shared.js';
 const catalog=JSON.parse(fs.readFileSync(new URL('../static/catalog.json',import.meta.url)));
 const p={basePrice:2500,count:10};
 const s={count:10,addons:{}};
@@ -13,4 +13,8 @@ assert.equal(totals(p,s,catalog).total,3850000);
 s.health.liverKidney.qty=1;
 assert.equal(totals(p,s,catalog).health,220000);
 assert.equal(rub(123456).includes(','),false);
+const defaults=proposalSelection(p,catalog);
+assert.equal(defaults.count,10);
+assert.equal(defaults.health.liverKidney.qty,2);
+assert.equal(defaults.corp.manager.qty,10);
 console.log('Frontend pricing: passed');

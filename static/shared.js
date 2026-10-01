@@ -21,6 +21,18 @@ export function totals(p,s,catalog){
   }
   t.total=t.base+t.corp+t.health+t.addons;return t;
 }
+export function proposalSelection(p,catalog){
+  const result={count:p.count,address:'',dates:'',comments:'',corp:{},health:{},addons:{}};
+  for(const group of ['corp','health'])for(const option of catalog[group]){
+    const state=p[group]?.[option.code]||{};
+    result[group][option.code]={on:Boolean(state.on),qty:option.type==='qty'?2:p.count};
+  }
+  for(const option of catalog.addons){
+    const state=p.addons?.[option.code]||{on:true,qty:0};
+    result.addons[option.code]={on:state.on!==false,qty:Number(state.qty)||0};
+  }
+  return result;
+}
 export function sumHtml(t,n){ return `<div class="sum-row"><span>Медицинский осмотр</span><b>${rub(t.base)}</b></div><div class="sum-row"><span>Дополнительные услуги к медосмотру</span><b>${rub(t.addons)}</b></div><div class="sum-row"><span>Корпоративные преимущества</span><b>${rub(t.corp)}</b></div><div class="sum-row"><span>Здоровье сотрудников</span><b>${rub(t.health)}</b></div><div class="grand"><span>Итого по предложению</span><strong>${rub(t.total)}</strong><small>${rub(t.total/n)} / сотрудника</small></div>`; }
 export function submissionServiceRows(item,group,catalog){
   const selected=catalog[group].filter(o=>item.body[group]?.[o.code]?.on);

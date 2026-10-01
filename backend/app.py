@@ -168,9 +168,10 @@ def submission_from_row(row):
 
 def links_for(db, pid):
     links = []
-    for row in db.execute('SELECT id,revoked,created,viewed,plain_token FROM links WHERE proposal_id=? ORDER BY created DESC', (pid,)):
+    for row in db.execute('SELECT id,revoked,created,viewed,plain_token,snapshot FROM links WHERE proposal_id=? ORDER BY created DESC', (pid,)):
         link = dict(row)
         token = link.pop('plain_token')
+        link['proposal'] = json.loads(link.pop('snapshot'))
         link['url'] = ORIGIN + '/p/' + token if token else None
         links.append(link)
     return links
@@ -453,7 +454,7 @@ def route(env):
                     lid = secrets.token_hex(16)
                     db.execute('INSERT INTO links(id,proposal_id,token,plain_token,snapshot,expires,created) VALUES(?,?,?,?,?,?,?)',(lid,pid,digest(token),token,json.dumps(p),0,now))
                     audit(db,uid,'published',pid)
-                    return {'url':ORIGIN+'/p/'+token}, []
+                    return {'url':ORIGIN+'/p/'+token,'proposal':p}, []
                 if method == 'POST' and len(parts) == 5 and parts[4] == 'revoke':
                     updated = db.execute('UPDATE links SET revoked=1 WHERE proposal_id=? AND id=?',(pid,data.get('id')))
                     if not updated.rowcount:
