@@ -2,6 +2,7 @@ import {$,esc,rub,date,api,setCsrf,notify,field,totals,sumHtml,optionDetails,sub
 import {openProposalDocument} from './proposal-document.js?v=18';
 let rights={can_edit:true,can_publish:true};
 let catalog, rows=[], current=null, dirty=false, busy=false, saving=false, activityGroups=[];
+const masterclasses=[1,2,3,4,5].map(number=>({code:`masterclass_${number}`,name:`Мастер-класс ${number}`}));
 const app=$('#app');
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 function login(){
@@ -12,7 +13,9 @@ async function start(me){
   if(me.role==='admin'){location.replace('/admin');return;}
   rights=me;
   setCsrf(me.csrf);catalog=await api('/static/catalog.json');rows=await api('/api/proposals');
-  $('#account').innerHTML=`<button class="header-button activity-header-button" id="global-activity">Ссылки и заявки <b id="activity-summary"></b></button><span>${esc(me.login)}</span> <button class="header-button" id="logout">Выйти</button>`;
+  $('#account').innerHTML=`<button class="header-button" id="masterclass-qr">QR мастер-класса</button><button class="header-button activity-header-button" id="global-activity">Ссылки и заявки <b id="activity-summary"></b></button><span>${esc(me.login)}</span> <button class="header-button" id="logout">Выйти</button>`;
+  ensureMasterclassDialog();
+  $('#masterclass-qr').onclick=openMasterclassDialog;
   $('#logout').onclick=async()=>{if(dirty&&!confirm('Выйти без сохранения изменений?'))return;await api('/api/logout','POST');dirty=false;location.reload();};
   current=rows[0]||null;render();
 }
@@ -21,6 +24,37 @@ function managerSummary(p){
   const name=[p.mopFirstName,p.mopLastName].filter(Boolean).join(' ')||'Имя не заполнено';
   const messengers=(p.mopMessengers||[]).map(item=>`<span class="pill">${esc(item.label)}: ${esc(item.value)}</span>`).join('');
   return `<section class="card manager-account-card"><div class="section-heading"><span class="number">02</span><h2>Персональный менеджер</h2></div><p class="muted small">Данные автоматически подставлены из аккаунта. Изменить их может администратор.</p><div class="manager-account-summary"><img class="avatar" src="${p.mopPhoto||'/static/logo.png'}" alt="Фото менеджера"><div><strong>${esc(name)}</strong>${p.mopPhone?`<p>Тел.: ${esc(p.mopPhone)} <span>(для звонков)</span></p>`:''}${p.mopMessengerPhone?`<p>Тел.: ${esc(p.mopMessengerPhone)} <span>(Telegram, MAX)</span></p>`:''}<div class="manager-account-messengers">${messengers}</div></div></div></section>`;
+}
+function ensureMasterclassDialog(){
+  if($('#masterclass-dialog'))return;
+  const dialog=document.createElement('dialog');
+  dialog.id='masterclass-dialog';
+  dialog.className='activity-dialog masterclass-dialog';
+  dialog.innerHTML=`<section class="card"><div class="dialog-heading"><div><span class="eyebrow">МАСТЕР-КЛАССЫ</span><h2>QR-код для предприятия</h2><p class="muted small">QR ведёт на отдельную страницу «Консилиума». Переходы и новые пользователи сохраняются по предприятию и мастер-классу.</p></div><button type="button" class="dialog-close" id="close-masterclass" aria-label="Закрыть">×</button></div><form id="masterclass-form"><div class="fields"><label class="field">ИНН<input name="inn" inputmode="numeric" maxlength="12" required placeholder="10 или 12 цифр"></label><label class="field">Название предприятия<input name="company" maxlength="300" required placeholder="ООО «Предприятие»"></label></div><label class="field">Мастер-класс<select name="masterclassCode">${masterclasses.map(item=>`<option value="${item.code}">${item.name}</option>`).join('')}</select></label><p class="error" id="masterclass-error" role="alert"></p><button class="primary" id="generate-masterclass-qr">Создать QR-код</button></form><div id="masterclass-result"></div></section>`;
+  document.body.append(dialog);
+  $('#close-masterclass').onclick=()=>dialog.close();
+  dialog.onclick=event=>{if(event.target===dialog)dialog.close();};
+  $('#masterclass-form').onsubmit=async event=>{
+    event.preventDefault();
+    const button=$('#generate-masterclass-qr');
+    const error=$('#masterclass-error');
+    button.disabled=true;error.textContent='';
+    try{
+      const form=Object.fromEntries(new FormData(event.target));
+      const result=await api('/api/masterclasses/qr','POST',form);
+      $('#masterclass-result').innerHTML=`<div class="masterclass-qr-result"><img src="${result.qrDataUrl}" alt="QR-код: ${esc(result.masterclassName)} для ${esc(result.company)}"><div><span class="eyebrow">QR-КОД ГОТОВ</span><h3>${esc(result.masterclassName)}</h3><p>${esc(result.company)} · ИНН ${esc(result.inn)}</p><label class="field">Ссылка<input id="masterclass-url" readonly value="${esc(result.url)}"></label><div class="masterclass-result-actions"><button type="button" class="secondary" id="copy-masterclass-url">Скопировать ссылку</button><a class="secondary masterclass-download" download="QR_${esc(result.inn)}_${esc(result.masterclassCode)}.png" href="${result.qrDataUrl}">Скачать QR</a></div></div></div>`;
+      $('#copy-masterclass-url').onclick=async()=>{try{await navigator.clipboard.writeText(result.url);notify('Ссылка скопирована');}catch{$('#masterclass-url').select();notify('Скопируйте выделенную ссылку');}};
+      notify('QR-код создан');
+    }catch(problem){error.textContent=problem.message;}finally{button.disabled=false;}
+  };
+}
+function openMasterclassDialog(){
+  const dialog=$('#masterclass-dialog'),form=$('#masterclass-form'),p=current?.body||{};
+  form.elements.inn.value=p.inn||'';
+  form.elements.company.value=p.company||'';
+  $('#masterclass-error').textContent='';
+  $('#masterclass-result').innerHTML='';
+  dialog.showModal();
 }
 function managerOption(g,o,p){
   const st=p[g][o.code], enabled=Boolean(st.on);

@@ -1,5 +1,7 @@
+import base64
 import hashlib
 import hmac
+import io
 import json
 import os
 import re
@@ -10,6 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from http.cookies import SimpleCookie
 from urllib.parse import urlparse
+import qrcode
 from backend.domain import DEFAULT_MANAGER_MESSENGER_PHONE, DEFAULT_MANAGER_PHONE, proposal, selection, calculate, manager_profile
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -52,6 +55,24 @@ DB = os.environ.get('DATABASE_PATH', str(ROOT / 'data' / 'ikp.sqlite3'))
 ORIGIN = os.environ.get('PUBLIC_ORIGIN', 'http://localhost:8000').rstrip('/')
 SECURE = ORIGIN.startswith('https://')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '').strip()
+
+MASTERCLASSES = (
+    ('masterclass_1', 'Мастер-класс 1'),
+    ('masterclass_2', 'Мастер-класс 2'),
+    ('masterclass_3', 'Мастер-класс 3'),
+    ('masterclass_4', 'Мастер-класс 4'),
+    ('masterclass_5', 'Мастер-класс 5'),
+)
+MASTERCLASS_NAMES = dict(MASTERCLASSES)
+
+def qr_data_url(value):
+    qr = qrcode.QRCode(version=None, box_size=9, border=4)
+    qr.add_data(value)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color='#0b705f', back_color='white')
+    output = io.BytesIO()
+    image.save(output, format='PNG')
+    return 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode('ascii')
 
 @contextmanager
 def connect():
@@ -399,6 +420,31 @@ def route(env):
                     raise Error(429, str(exc))
                 except company_suggestions.Unavailable as exc:
                     raise Error(503, str(exc))
+            if path == '/api/masterclasses' and method == 'GET':
+                return {'items':[{'code':code, 'name':name} for code, name in MASTERCLASSES]}, []
+            if path == '/api/masterclasses/qr' and method == 'POST':
+                inn = re.sub(r'\D', '', str(data.get('inn', '')))
+                company = str(data.get('company', '')).strip()
+                masterclass_code = str(data.get('masterclassCode', '')).strip()
+                if len(inn) not in (10, 12):
+                    raise Error(400, 'Укажите корректный ИНН из 10 или 12 цифр')
+                if not company or len(company) > 300:
+                    raise Error(400, 'Укажите название предприятия')
+                if masterclass_code not in MASTERCLASS_NAMES:
+                    raise Error(400, 'Выберите мастер-класс из списка')
+                try:
+                    access = consilium.create_masterclass_link(inn, company, masterclass_code)
+                except consilium.ConsiliumUnavailable as exc:
+                    raise Error(503, str(exc))
+                audit(db, uid, 'masterclass_qr_created', inn + ':' + masterclass_code)
+                return {
+                    'url': access['url'],
+                    'inn': inn,
+                    'company': company,
+                    'masterclassCode': masterclass_code,
+                    'masterclassName': MASTERCLASS_NAMES[masterclass_code],
+                    'qrDataUrl': qr_data_url(access['url']),
+                }, []
             if path == '/api/activity' and method == 'GET':
                 groups = []
                 link_count = submission_count = 0

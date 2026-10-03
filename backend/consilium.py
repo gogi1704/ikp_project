@@ -8,14 +8,14 @@ class ConsiliumUnavailable(RuntimeError):
     pass
 
 
-def create_access_link(inn, company):
+def _create_link(path, payload):
     origin = os.environ.get('CONSILIUM_API_ORIGIN', '').strip().rstrip('/')
     secret = os.environ.get('CONSILIUM_INTEGRATION_SECRET', '').strip()
     if not origin or not secret:
         raise ConsiliumUnavailable('Интеграция с «Консилиумом» не настроена')
-    payload = json.dumps({'inn': str(inn or ''), 'company': str(company or '')}, ensure_ascii=False).encode()
+    body = json.dumps(payload, ensure_ascii=False).encode()
     request = Request(
-        origin + '/api/integrations/ikp/access', data=payload, method='POST',
+        origin + path, data=body, method='POST',
         headers={
             'Authorization': 'Bearer ' + secret,
             'Content-Type': 'application/json; charset=utf-8',
@@ -37,3 +37,18 @@ def create_access_link(inn, company):
     if not url.startswith(('https://', 'http://localhost:', 'http://127.0.0.1:')):
         raise ConsiliumUnavailable('«Консилиум» вернул некорректную ссылку')
     return {'url': url, 'trialDays': 5}
+
+
+def create_access_link(inn, company):
+    return _create_link('/api/integrations/ikp/access', {
+        'inn': str(inn or ''), 'company': str(company or ''),
+    })
+
+
+def create_masterclass_link(inn, company, masterclass_code):
+    result = _create_link('/api/integrations/ikp/masterclass', {
+        'inn': str(inn or ''), 'company': str(company or ''),
+        'masterclass_code': str(masterclass_code or ''),
+    })
+    result['masterclassCode'] = str(masterclass_code or '')
+    return result

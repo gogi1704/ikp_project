@@ -1,0 +1,15 @@
+.masterclass-dialog { width: min(94vw, 760px); }
+.masterclass-dialog select { width: 100%; margin-top: 7px; padding: 12px 13px; color: var(--ink); background: #fff; border: 1px solid var(--line2); border-radius: 10px; }
+.masterclass-qr-result { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: center; margin-top: 24px; padding: 22px; background: #f2faf7; border: 1px solid #cfe9e2; border-radius: 15px; }
+.masterclass-qr-result > img { width: 220px; height: 220px; padding: 8px; background: #fff; border-radius: 12px; box-shadow: 0 8px 24px #0b4d3e17; }
+.masterclass-qr-result h3 { margin: 0 0 5px; font-size: 1.25rem; }
+.masterclass-qr-result p { color: var(--slate); }
+.masterclass-result-actions { display: flex; gap: 10px; }
+.masterclass-result-actions > * { display: inline-flex; width: auto; align-items: center; justify-content: center; margin-top: 0; text-decoration: none; }
+.masterclass-download { min-height: 44px; padding: 11px 16px; border-radius: 11px; font-size: .88rem; font-weight: 680; }
+@media (max-width: 620px) {
+  .masterclass-qr-result { grid-template-columns: 1fr; }
+  .masterclass-qr-result > img { width: min(100%, 260px); height: auto; margin: auto; }
+  .masterclass-result-actions { display: grid; }
+  .masterclass-result-actions > * { width: 100%; }
+}

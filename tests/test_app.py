@@ -1,4 +1,5 @@
 import io
+import base64
 import json
 import tempfile
 import unittest
@@ -12,6 +13,11 @@ class AppTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory()
         self.consilium=patch('backend.app.consilium.create_access_link', return_value={'url':'https://consilium.example/ikp/test','trialDays':5})
         self.consilium.start()
+        self.masterclass_consilium=patch(
+            'backend.app.consilium.create_masterclass_link',
+            return_value={'url':'https://consilium.example/masterclass/test','masterclassCode':'masterclass_1'},
+        )
+        self.masterclass_consilium.start()
         app.DB=str(Path(self.tmp.name)/'test.sqlite3')
         app.ADMIN_PASSWORD='admin-test-password'
         app.init_db()
@@ -21,6 +27,7 @@ class AppTests(unittest.TestCase):
         self.call('/api/login','POST',{'login':'manager@example.test','password':'long-test-password'})
 
     def tearDown(self):
+        self.masterclass_consilium.stop()
         self.consilium.stop()
         self.tmp.cleanup()
 
@@ -94,6 +101,30 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.call('/api/proposals/'+p['id']+'/activity')[0],404)
         self.assertEqual(self.call('/api/proposals')[1],[])
         self.assertEqual(self.call('/api/activity')[1]['linkCount'],0)
+
+    def test_manager_can_create_enterprise_masterclass_qr(self):
+        status, result = self.call('/api/masterclasses/qr', 'POST', {
+            'inn':'7707083893',
+            'company':'АО Тестовое предприятие',
+            'masterclassCode':'masterclass_1',
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(result['url'], 'https://consilium.example/masterclass/test')
+        self.assertEqual(result['masterclassName'], 'Мастер-класс 1')
+        prefix, encoded = result['qrDataUrl'].split(',', 1)
+        self.assertEqual(prefix, 'data:image/png;base64')
+        self.assertTrue(base64.b64decode(encoded).startswith(b'\x89PNG\r\n\x1a\n'))
+        app.consilium.create_masterclass_link.assert_called_once_with(
+            '7707083893', 'АО Тестовое предприятие', 'masterclass_1',
+        )
+
+    def test_masterclass_qr_validates_enterprise_and_class(self):
+        self.assertEqual(self.call('/api/masterclasses/qr', 'POST', {
+            'inn':'123', 'company':'АО Тест', 'masterclassCode':'masterclass_1',
+        })[0], 400)
+        self.assertEqual(self.call('/api/masterclasses/qr', 'POST', {
+            'inn':'7707083893', 'company':'АО Тест', 'masterclassCode':'unexpected',
+        })[0], 400)
 
     def test_submission_is_not_saved_without_consilium_link(self):
         p,token=self.published()
