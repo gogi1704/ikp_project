@@ -1,5 +1,5 @@
 import {$,esc,rub,date,api,setCsrf,notify,field,totals,sumHtml,optionDetails,submissionDetail,linkActions,wireLinkCopyButtons,proposalSelection} from './shared.js';
-import {openProposalDocument} from './proposal-document.js?v=16';
+import {openProposalDocument} from './proposal-document.js?v=18';
 let rights={can_edit:true,can_publish:true};
 let catalog, rows=[], current=null, dirty=false, busy=false, saving=false, activityGroups=[];
 const app=$('#app');

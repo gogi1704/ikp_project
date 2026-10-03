@@ -53,7 +53,7 @@ export function buildProposalDocument(p,s,catalog,assetRoot=''){
     return `<li><strong>${esc(item.name)}</strong> — ${Math.round(price).toLocaleString('ru-RU')} руб.</li>`;
   }).join('');
 
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Коммерческое предложение · ${esc(p.company)}</title><link rel="stylesheet" href="${esc(assetRoot)}/static/proposal-document.css?v=13"><script src="${esc(assetRoot)}/static/vendor/html2canvas.min.js"></script><script src="${esc(assetRoot)}/static/vendor/jspdf.umd.min.js"></script></head><body>
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Коммерческое предложение · ${esc(p.company)}</title><link rel="stylesheet" href="${esc(assetRoot)}/static/proposal-document.css?v=15"><script src="${esc(assetRoot)}/static/vendor/html2canvas.min.js"></script><script src="${esc(assetRoot)}/static/vendor/jspdf.umd.min.js"></script></head><body>
   <div class="print-toolbar"><button type="button" id="print-document">Печатать документ</button><button type="button" id="download-document" class="secondary">Скачать PDF</button></div>
   <main class="sheet">
     <div class="document-page">

@@ -1,5 +1,5 @@
 import {$,esc,date,rub,api,setCsrf,notify,field,messengerFields,wireMessengerFields,readMessengerFields,submissionDetail,linkActions,wireLinkCopyButtons,proposalSelection} from './shared.js';
-import {openProposalDocument} from './proposal-document.js?v=16';
+import {openProposalDocument} from './proposal-document.js?v=18';
 const app=$('#app');
 let managers=[], activityGroups=[], activityCatalog=null;
 const checks=(u={active:1,can_edit:1,can_publish:1})=>`<div class="access-options">${[['active','Доступ к панели'],['can_edit','Создание и редактирование КП'],['can_publish','Публикация и отзыв ссылок']].map(([k,label])=>`<label class="check"><input type="checkbox" name="${k}" ${u[k]?'checked':''}>${label}</label>`).join('')}</div>`;
