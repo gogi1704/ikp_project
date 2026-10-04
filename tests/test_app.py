@@ -149,6 +149,7 @@ class AppTests(unittest.TestCase):
     def test_printable_proposal_module_is_served(self):
         assets={
             '/static/proposal-document.js':('text/javascript',b'buildProposalDocument'),
+            '/static/masterclass-qr.js':('text/javascript',b'openMasterclassQr'),
             '/static/proposal-document.css':('text/css',b'.print-toolbar'),
             '/static/signature-larisa.png':('image/png',b'\x89PNG'),
             '/static/vendor/html2canvas.min.js':('text/javascript',b'html2canvas'),
@@ -342,6 +343,19 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.call('/api/proposals')[0],200)
         self.assertEqual(self.call('/api/proposals','POST',{})[0],403)
         self.assertEqual(self.call('/api/admin/managers')[0],403)
+
+    def test_admin_can_create_enterprise_masterclass_qr(self):
+        self.admin_login()
+        status, result = self.call('/api/masterclasses/qr', 'POST', {
+            'inn':'7707083893',
+            'company':'АО Тестовое предприятие',
+            'masterclassCode':'masterclass_2',
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(result['masterclassName'], 'Мастер-класс 2')
+        app.consilium.create_masterclass_link.assert_called_once_with(
+            '7707083893', 'АО Тестовое предприятие', 'masterclass_2',
+        )
 
     def test_admin_activity_lists_all_managers_data(self):
         p1,token1=self.published()

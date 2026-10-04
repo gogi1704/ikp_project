@@ -259,7 +259,7 @@ def route(env):
         return (ROOT / 'static' / 'admin.html').read_bytes(), [('Content-Type', 'text/html; charset=utf-8')]
     if method == 'GET' and path.startswith('/p/'):
         return (ROOT / 'static' / 'client.html').read_bytes(), [('Content-Type', 'text/html; charset=utf-8')]
-    if method == 'GET' and path in ['/static/app.css', '/static/proposal-document.css', '/static/shared.js', '/static/manager.js', '/static/client.js', '/static/proposal-document.js', '/static/vendor/html2canvas.min.js', '/static/vendor/jspdf.umd.min.js', '/static/admin.js', '/static/catalog.json', '/static/logo.png', '/static/signature-larisa.png', '/static/corporate-care.mp4', '/static/materials/onco-assistance.pptx', '/static/materials/corporate-checkups-price.xlsx']:
+    if method == 'GET' and path in ['/static/app.css', '/static/proposal-document.css', '/static/shared.js', '/static/manager.js', '/static/client.js', '/static/proposal-document.js', '/static/masterclass-qr.js', '/static/vendor/html2canvas.min.js', '/static/vendor/jspdf.umd.min.js', '/static/admin.js', '/static/catalog.json', '/static/logo.png', '/static/signature-larisa.png', '/static/corporate-care.mp4', '/static/materials/onco-assistance.pptx', '/static/materials/corporate-checkups-price.xlsx']:
         ext = Path(path).suffix
         return (ROOT / path.lstrip('/')).read_bytes(), [('Content-Type', {'.css':'text/css', '.js':'text/javascript', '.json':'application/json', '.png':'image/png', '.mp4':'video/mp4', '.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}[ext])]
     with connect() as db:
@@ -345,6 +345,31 @@ def route(env):
             if path == '/api/logout' and method == 'POST':
                 db.execute('DELETE FROM sessions WHERE token=?',(session['token'],))
                 return {}, [('Set-Cookie','ikp_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')]
+            if path == '/api/masterclasses' and method == 'GET':
+                return {'items':[{'code':code, 'name':name} for code, name in MASTERCLASSES]}, []
+            if path == '/api/masterclasses/qr' and method == 'POST':
+                inn = re.sub(r'\D', '', str(data.get('inn', '')))
+                company = str(data.get('company', '')).strip()
+                masterclass_code = str(data.get('masterclassCode', '')).strip()
+                if len(inn) not in (10, 12):
+                    raise Error(400, 'Укажите корректный ИНН из 10 или 12 цифр')
+                if not company or len(company) > 300:
+                    raise Error(400, 'Укажите название предприятия')
+                if masterclass_code not in MASTERCLASS_NAMES:
+                    raise Error(400, 'Выберите мастер-класс из списка')
+                try:
+                    access = consilium.create_masterclass_link(inn, company, masterclass_code)
+                except consilium.ConsiliumUnavailable as exc:
+                    raise Error(503, str(exc))
+                audit(db, uid, 'masterclass_qr_created', inn + ':' + masterclass_code)
+                return {
+                    'url': access['url'],
+                    'inn': inn,
+                    'company': company,
+                    'masterclassCode': masterclass_code,
+                    'masterclassName': MASTERCLASS_NAMES[masterclass_code],
+                    'qrDataUrl': qr_data_url(access['url']),
+                }, []
             if path.startswith('/api/admin/'):
                 if session['role'] != 'admin':
                     raise Error(403, 'Доступ только для администратора')
@@ -420,31 +445,6 @@ def route(env):
                     raise Error(429, str(exc))
                 except company_suggestions.Unavailable as exc:
                     raise Error(503, str(exc))
-            if path == '/api/masterclasses' and method == 'GET':
-                return {'items':[{'code':code, 'name':name} for code, name in MASTERCLASSES]}, []
-            if path == '/api/masterclasses/qr' and method == 'POST':
-                inn = re.sub(r'\D', '', str(data.get('inn', '')))
-                company = str(data.get('company', '')).strip()
-                masterclass_code = str(data.get('masterclassCode', '')).strip()
-                if len(inn) not in (10, 12):
-                    raise Error(400, 'Укажите корректный ИНН из 10 или 12 цифр')
-                if not company or len(company) > 300:
-                    raise Error(400, 'Укажите название предприятия')
-                if masterclass_code not in MASTERCLASS_NAMES:
-                    raise Error(400, 'Выберите мастер-класс из списка')
-                try:
-                    access = consilium.create_masterclass_link(inn, company, masterclass_code)
-                except consilium.ConsiliumUnavailable as exc:
-                    raise Error(503, str(exc))
-                audit(db, uid, 'masterclass_qr_created', inn + ':' + masterclass_code)
-                return {
-                    'url': access['url'],
-                    'inn': inn,
-                    'company': company,
-                    'masterclassCode': masterclass_code,
-                    'masterclassName': MASTERCLASS_NAMES[masterclass_code],
-                    'qrDataUrl': qr_data_url(access['url']),
-                }, []
             if path == '/api/activity' and method == 'GET':
                 groups = []
                 link_count = submission_count = 0

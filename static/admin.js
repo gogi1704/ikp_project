@@ -1,11 +1,13 @@
 import {$,esc,date,rub,api,setCsrf,notify,field,messengerFields,wireMessengerFields,readMessengerFields,submissionDetail,linkActions,wireLinkCopyButtons,proposalSelection} from './shared.js';
-import {openProposalDocument} from './proposal-document.js?v=18';
+import {openProposalDocument} from './proposal-document.js?v=19';
+import {openMasterclassQr} from './masterclass-qr.js?v=1';
 const app=$('#app');
 let managers=[], activityGroups=[], activityCatalog=null;
 const checks=(u={active:1,can_edit:1,can_publish:1})=>`<div class="access-options">${[['active','Доступ к панели'],['can_edit','Создание и редактирование КП'],['can_publish','Публикация и отзыв ссылок']].map(([k,label])=>`<label class="check"><input type="checkbox" name="${k}" ${u[k]?'checked':''}>${label}</label>`).join('')}</div>`;
 const access=form=>Object.fromEntries(['active','can_edit','can_publish'].map(k=>[k,form.elements[k].checked]));
 const defaultPhone='+7 (863) 322-67-66';
 const defaultMessengerPhone='+7 (989) 506-74-60';
+function openAdminProposalDocument(p,s){return openProposalDocument(p,s,activityCatalog,{onMasterclassQr:(popup,proposal)=>openMasterclassQr(popup,proposal,api,notify)});}
 const profileFields=(user=null)=>{const u=user||{phone:defaultPhone,messengerPhone:defaultMessengerPhone};return `<div class="profile-fields"><div class="fields">${field('lastName','Фамилия',u.lastName||'','text','maxlength="150"')}${field('firstName','Имя',u.firstName||'','text','maxlength="150"')}${field('phone','Телефон для звонков',u.phone||'','tel','maxlength="150" placeholder="+7 (863) 322-67-66"')}${field('messengerPhone','Телефон для Telegram / MAX',u.messengerPhone||'','tel','maxlength="150" placeholder="+7 (989) 506-74-60"')}</div><div class="admin-photo"><img class="avatar" src="${u.photo||'/static/logo.png'}" alt="Фото менеджера"><label class="upload">Выбрать фото<input type="file" name="photoFile" accept="image/png,image/jpeg,image/webp"></label><small>PNG, JPEG или WebP · до 250 КБ</small></div><h3>Мессенджеры</h3>${messengerFields(u.messengers||[])}</div>`;};
 async function fileData(file,current=''){
   if(!file||!file.size)return current;
@@ -67,8 +69,8 @@ function renderActivity(){
   }).join('')||`<section class="empty activity-empty card">${activityGroups.length?'<h3>Ничего не найдено</h3>':'<h3>Предложений пока нет</h3>'}</section>`;
   wireLinkCopyButtons($('#admin-activity'));
   document.querySelectorAll('#admin-activity [data-submission]').forEach(button=>button.onclick=()=>openAdminSubmission(button.dataset.proposal,button.dataset.submission));
-  document.querySelectorAll('#admin-activity [data-print-link]').forEach(button=>button.onclick=()=>{const group=activityGroups.find(item=>item.id===button.dataset.proposal),link=group?.links.find(item=>item.id===button.dataset.printLink);if(!link?.proposal)return notify('Не удалось открыть документ');openProposalDocument(link.proposal,proposalSelection(link.proposal,activityCatalog),activityCatalog);});
-  document.querySelectorAll('#admin-activity [data-print-submission]').forEach(button=>button.onclick=()=>{const group=activityGroups.find(item=>item.id===button.dataset.proposal),item=group?.submissions.find(entry=>entry.id===button.dataset.printSubmission);if(!item?.proposal)return notify('Не удалось открыть документ');openProposalDocument(item.proposal,item.body,activityCatalog);});
+  document.querySelectorAll('#admin-activity [data-print-link]').forEach(button=>button.onclick=()=>{const group=activityGroups.find(item=>item.id===button.dataset.proposal),link=group?.links.find(item=>item.id===button.dataset.printLink);if(!link?.proposal)return notify('Не удалось открыть документ');openAdminProposalDocument(link.proposal,proposalSelection(link.proposal,activityCatalog));});
+  document.querySelectorAll('#admin-activity [data-print-submission]').forEach(button=>button.onclick=()=>{const group=activityGroups.find(item=>item.id===button.dataset.proposal),item=group?.submissions.find(entry=>entry.id===button.dataset.printSubmission);if(!item?.proposal)return notify('Не удалось открыть документ');openAdminProposalDocument(item.proposal,item.body);});
 }
 function openAdminSubmission(proposalId,submissionId){
   const group=activityGroups.find(item=>item.id===proposalId),submission=group?.submissions.find(item=>item.id===submissionId);

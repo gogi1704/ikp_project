@@ -34,7 +34,7 @@ function benefitCards(title,items){
 
 function safeText(value,fallback='Не указано'){return esc(String(value||'').trim()||fallback);}
 
-export function buildProposalDocument(p,s,catalog,assetRoot=''){
+export function buildProposalDocument(p,s,catalog,assetRoot='',options={}){
   const t=totals(p,s,catalog);
   const addons=selectedServices('addons',p,s,catalog);
   const selectedAddons=addons.filter(item=>item.quantity>0);
@@ -53,8 +53,9 @@ export function buildProposalDocument(p,s,catalog,assetRoot=''){
     return `<li><strong>${esc(item.name)}</strong> — ${Math.round(price).toLocaleString('ru-RU')} руб.</li>`;
   }).join('');
 
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Коммерческое предложение · ${esc(p.company)}</title><link rel="stylesheet" href="${esc(assetRoot)}/static/proposal-document.css?v=15"><script src="${esc(assetRoot)}/static/vendor/html2canvas.min.js"></script><script src="${esc(assetRoot)}/static/vendor/jspdf.umd.min.js"></script></head><body>
-  <div class="print-toolbar"><button type="button" id="print-document">Печатать документ</button><button type="button" id="download-document" class="secondary">Скачать PDF</button></div>
+  const masterclassButton=options.showMasterclassQr?'<button type="button" id="masterclass-qr-document" class="secondary">Создать QR-код</button>':'';
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Коммерческое предложение · ${esc(p.company)}</title><link rel="stylesheet" href="${esc(assetRoot)}/static/proposal-document.css?v=16"><script src="${esc(assetRoot)}/static/vendor/html2canvas.min.js"></script><script src="${esc(assetRoot)}/static/vendor/jspdf.umd.min.js"></script></head><body>
+  <div class="print-toolbar"><button type="button" id="print-document">Печатать документ</button><button type="button" id="download-document" class="secondary">Скачать PDF</button>${masterclassButton}</div>
   <main class="sheet">
     <div class="document-page">
     <header class="brand"><img src="${esc(assetRoot)}/static/logo.png" alt=""><b>ЧЕЛОВЕК</b><span>Корпоративная медицина</span></header>
@@ -176,16 +177,17 @@ async function openPrintablePdf(popup){
   popup.location.replace(URL.createObjectURL(pdf.output('blob')));
 }
 
-export function openProposalDocument(p,s,catalog){
+export function openProposalDocument(p,s,catalog,options={}){
   const popup=window.open('about:blank','_blank');
   if(!popup)return false;
   popup.opener=null;
   popup.document.open();
-  popup.document.write(buildProposalDocument(p,s,catalog,location.origin));
+  popup.document.write(buildProposalDocument(p,s,catalog,location.origin,{showMasterclassQr:typeof options.onMasterclassQr==='function'}));
   popup.document.close();
   const attachControls=()=>{
     const printButton=popup.document.querySelector('#print-document');
     const downloadButton=popup.document.querySelector('#download-document');
+    const masterclassButton=popup.document.querySelector('#masterclass-qr-document');
     if(!printButton||!downloadButton)return false;
     printButton.onclick=()=>openPrintablePdf(popup).catch(error=>{
       printButton.disabled=false;
@@ -197,6 +199,7 @@ export function openProposalDocument(p,s,catalog){
       downloadButton.textContent='Скачать PDF';
       window.alert(error.message||'Не удалось сформировать PDF');
     });
+    if(masterclassButton)masterclassButton.onclick=()=>options.onMasterclassQr(popup,p);
     return true;
   };
   const attachWhenReady=(attempt=0)=>{
