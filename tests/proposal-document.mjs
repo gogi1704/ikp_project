@@ -10,7 +10,7 @@ const catalog={
 };
 const proposal={
   company:'АО «Пример» <script>',inn:'1234567890',lpr:'Иванова Ивана Ивановича',count:10,basePrice:2500,
-  mopFirstName:'Анна',mopLastName:'Петрова',mopPhone:'+7 800 000-00-00',mopMessengerPhone:'+7 900 000-00-00',
+  mopFirstName:'Анна',mopLastName:'Петрова',mopPhone:'+7 800 000-00-00',mopMessengerPhone:'+7 900 000-00-00',mopExtension:'417',
   addons:{lmk:{price:650}},corp:{manager:{price:0}},health:{aiAssist:{price:20}},
 };
 const selection={
@@ -46,6 +46,11 @@ assert.match(html,/Лариса Захарченко/);
 assert.match(html,/static\/signature-larisa\.png/);
 assert.match(html,/class="signature-mark"/);
 assert.match(html,/Дата формирования ИКП:/);
+assert.match(html,/\+7 \(863\) 322-69-79 доб\. 417/);
+const legacyHtml=buildProposalDocument({...proposal,mopExtension:undefined},selection,catalog,'https://example.test');
+assert.doesNotMatch(legacyHtml,/322-69-79 доб\./);
+const defaultHtml=buildProposalDocument(Object.fromEntries(Object.entries(proposal).filter(([key])=>key!=='mopExtension')),selection,catalog,'https://example.test');
+assert.match(defaultHtml,/322-69-79 доб\. 932/);
 assert.match(html,/Стоимость для предприятия: 200 ₽/);
 assert.equal((html.match(/class="page-break"/g)||[]).length,3);
 assert.doesNotMatch(html,/Мы проводим коллективные медосмотры более 10 лет/);

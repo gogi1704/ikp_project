@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 from backend import app
-from backend.domain import DEFAULT_MANAGER_MESSENGER_PHONE, DEFAULT_MANAGER_PHONE, proposal, selection, calculate
+from backend.domain import DEFAULT_MANAGER_EXTENSION, DEFAULT_MANAGER_MESSENGER_PHONE, DEFAULT_MANAGER_PHONE, proposal, selection, calculate
 
 class AppTests(unittest.TestCase):
     def setUp(self):
@@ -93,6 +93,7 @@ class AppTests(unittest.TestCase):
         p,token=self.published()
         self.assertEqual(self.call('/api/proposals',authenticated=False)[0],401)
         self.assertEqual(self.call('/api/proposals','POST',{},origin='https://evil.test')[0],403)
+        self.assertEqual(self.call('/api/proposals','POST',{},origin='http://127.0.0.1:8000')[0],200)
         self.assertEqual(self.call('/api/public/'+p['id'],authenticated=False)[0],404)
         self.csrf='wrong'
         self.assertEqual(self.call('/api/proposals','POST',{})[0],403)
@@ -219,6 +220,16 @@ class AppTests(unittest.TestCase):
         lid=self.call('/api/proposals/'+p['id']+'/activity')[1]['links'][0]['id']
         self.assertEqual(self.call('/api/proposals/'+p['id']+'/revoke','POST',{'id':lid})[0],200)
         self.assertEqual(self.call('/api/public/'+token,authenticated=False)[0],410)
+
+    def test_production_origin_does_not_allow_local_aliases(self):
+        original=app.ORIGIN
+        try:
+            app.ORIGIN='https://kp.cheloveckmed.ru'
+            self.assertFalse(app.origin_allowed('http://localhost:8000'))
+            self.assertFalse(app.origin_allowed('http://127.0.0.1:8000'))
+            self.assertTrue(app.origin_allowed('https://kp.cheloveckmed.ru'))
+        finally:
+            app.ORIGIN=original
 
     def test_activity_exposes_reopenable_link_url(self):
         p,token=self.published()
@@ -451,7 +462,8 @@ class AppTests(unittest.TestCase):
             self.assertEqual((u['role'],u['active'],u['can_edit'],u['can_publish']),('manager',1,1,1))
             self.assertEqual(u['phone'],DEFAULT_MANAGER_PHONE)
             self.assertEqual(u['messenger_phone'],DEFAULT_MANAGER_MESSENGER_PHONE)
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],8)
+            self.assertEqual(u['phone_extension'],DEFAULT_MANAGER_EXTENSION)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],9)
 
     def test_submission_migration_preserves_existing_and_allows_repeat(self):
         proposal_row,_=self.published()
@@ -465,11 +477,11 @@ class AppTests(unittest.TestCase):
         with app.connect() as db:
             db.execute('INSERT INTO submissions VALUES(?,?,?,?,?)',('new-submission',link_id,'{}','{}',2))
             self.assertEqual(db.execute('SELECT COUNT(*) FROM submissions WHERE link_id=?',(link_id,)).fetchone()[0],2)
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],8)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],9)
 
     def test_manager_profile_is_copied_to_new_proposals(self):
         self.admin_login()
-        profile={'firstName':'Лариса','lastName':'Захарченко','phone':'+7 863 322-67-66','messengerPhone':'+7 989 506-74-60','photo':'','messengers':[]}
+        profile={'firstName':'Лариса','lastName':'Захарченко','phone':'+7 863 322-67-66','messengerPhone':'+7 989 506-74-60','extension':'417','photo':'','messengers':[]}
         status, created=self.call('/api/admin/managers','POST',{'login':'profile_manager','password':'profile-password','profile':profile})
         self.assertEqual(status,200)
         managers=self.call('/api/admin/managers')[1]
@@ -483,21 +495,30 @@ class AppTests(unittest.TestCase):
         self.assertEqual(proposal_body['mopLastName'],'Захарченко')
         self.assertEqual(proposal_body['mopPhone'],'+7 863 322-67-66')
         self.assertEqual(proposal_body['mopMessengerPhone'],'+7 989 506-74-60')
+        self.assertEqual(proposal_body['mopExtension'],'417')
 
     def test_new_manager_uses_mvp_phone_defaults(self):
         me=self.call('/api/me')[1]
         self.assertEqual(me['profile']['phone'],DEFAULT_MANAGER_PHONE)
         self.assertEqual(me['profile']['messengerPhone'],DEFAULT_MANAGER_MESSENGER_PHONE)
+        self.assertEqual(me['profile']['extension'],DEFAULT_MANAGER_EXTENSION)
         proposal_body=self.call('/api/proposals','POST',{})[1]['body']
         self.assertEqual(proposal_body['mopPhone'],DEFAULT_MANAGER_PHONE)
         self.assertEqual(proposal_body['mopMessengerPhone'],DEFAULT_MANAGER_MESSENGER_PHONE)
+        self.assertEqual(proposal_body['mopExtension'],DEFAULT_MANAGER_EXTENSION)
+
+    def test_manager_extension_must_contain_only_digits(self):
+        self.admin_login()
+        user=next(item for item in self.call('/api/admin/managers')[1] if item['login']=='manager@example.test')
+        profile={'firstName':'Иван','lastName':'Иванов','phone':'123','messengerPhone':'456','extension':'9A2','photo':'','messengers':[]}
+        self.assertEqual(self.call('/api/admin/managers/'+user['id']+'/profile','PUT',{'profile':profile})[0],400)
 
     def test_manager_cannot_edit_profile_or_override_account_data_in_proposal(self):
         self.assertEqual(self.call('/api/profile','PUT',{'profile':{}})[0],404)
         self.admin_login()
         user=next(item for item in self.call('/api/admin/managers')[1] if item['login']=='manager@example.test')
         requested={
-            'firstName':'Мария','lastName':'Орлова','phone':'+7 900 100-20-30','messengerPhone':'', 'photo':'',
+            'firstName':'Мария','lastName':'Орлова','phone':'+7 900 100-20-30','messengerPhone':'','extension':'615','photo':'',
             'messengers':[
                 {'type':'telegram','value':'@maria_manager'},
                 {'type':'whatsapp','value':'+7 (900) 100-20-30'},
@@ -514,22 +535,25 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.call('/api/me')[1]['profile'],saved)
         proposal_row=self.call('/api/proposals','POST',{'company':'ООО «Контакт»','lpr':'Иван Иванов'})[1]
         self.assertEqual(proposal_row['body']['mopMessengers'],saved['messengers'])
-        tampered=proposal_row['body']|{'mopFirstName':'Подмена','mopPhone':'000','mopMessengers':[]}
+        self.assertEqual(proposal_row['body']['mopExtension'],'615')
+        tampered=proposal_row['body']|{'mopFirstName':'Подмена','mopPhone':'000','mopExtension':'000','mopMessengers':[]}
         updated=self.call('/api/proposals/'+proposal_row['id'],'PUT',{'body':tampered,'version':proposal_row['version']})[1]
         self.assertEqual(updated['body']['mopFirstName'],saved['firstName'])
         self.assertEqual(updated['body']['mopPhone'],saved['phone'])
+        self.assertEqual(updated['body']['mopExtension'],saved['extension'])
         self.assertEqual(updated['body']['mopMessengers'],saved['messengers'])
         link=self.call('/api/proposals/'+proposal_row['id']+'/publish','POST')[1]
         public=self.call('/api/public/'+link['url'].split('/p/')[1],authenticated=False)[1]
         self.assertEqual(public['proposal']['mopFirstName'],saved['firstName'])
         self.assertEqual(public['proposal']['mopPhone'],saved['phone'])
+        self.assertEqual(public['proposal']['mopExtension'],saved['extension'])
         self.assertEqual(public['proposal']['mopMessengers'],saved['messengers'])
 
     def test_messenger_links_reject_unsafe_or_wrong_hosts(self):
         self.admin_login()
         user=next(item for item in self.call('/api/admin/managers')[1] if item['login']=='manager@example.test')
         path='/api/admin/managers/'+user['id']+'/profile'
-        base={'firstName':'','lastName':'','phone':'','messengerPhone':'','photo':''}
+        base={'firstName':'','lastName':'','phone':'','messengerPhone':'','extension':'','photo':''}
         invalid=[
             {'type':'telegram','value':'https://evil.test/user'},
             {'type':'whatsapp','value':'javascript:alert(1)'},
@@ -543,7 +567,7 @@ class AppTests(unittest.TestCase):
         self.admin_login()
         managers=self.call('/api/admin/managers')[1]
         user=next(item for item in managers if item['login']=='manager@example.test')
-        profile={'firstName':'Иван','lastName':'Иванов','phone':'+7 900 111-22-33','messengerPhone':'@ivanov','photo':'','messengers':[]}
+        profile={'firstName':'Иван','lastName':'Иванов','phone':'+7 900 111-22-33','messengerPhone':'@ivanov','extension':'204','photo':'','messengers':[]}
         path='/api/admin/managers/'+user['id']
         status,result=self.call(path+'/profile','PUT',{'profile':profile})
         self.assertEqual(status,200)
@@ -559,7 +583,7 @@ class AppTests(unittest.TestCase):
         user=next(item for item in self.call('/api/admin/managers')[1] if item['login']=='manager@example.test')
         path='/api/admin/managers/'+user['id']
         self.call(path,'PUT',{'active':True,'can_edit':False,'can_publish':False})
-        profile={'firstName':'Анна','lastName':'Петрова','phone':'123','messengerPhone':'456','photo':'','messengers':[]}
+        profile={'firstName':'Анна','lastName':'Петрова','phone':'123','messengerPhone':'456','extension':'305','photo':'','messengers':[]}
         self.assertEqual(self.call(path+'/profile','PUT',{'profile':profile})[0],200)
         saved=next(item for item in self.call('/api/admin/managers')[1] if item['id']==user['id'])
         self.assertEqual({key:saved[key] for key in profile},profile)

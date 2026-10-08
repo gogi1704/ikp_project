@@ -13,7 +13,7 @@ from pathlib import Path
 from http.cookies import SimpleCookie
 from urllib.parse import urlparse
 import qrcode
-from backend.domain import DEFAULT_MANAGER_MESSENGER_PHONE, DEFAULT_MANAGER_PHONE, proposal, selection, calculate, manager_profile
+from backend.domain import DEFAULT_MANAGER_EXTENSION, DEFAULT_MANAGER_MESSENGER_PHONE, DEFAULT_MANAGER_PHONE, proposal, selection, calculate, manager_profile
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -55,6 +55,7 @@ DB = os.environ.get('DATABASE_PATH', str(ROOT / 'data' / 'ikp.sqlite3'))
 ORIGIN = os.environ.get('PUBLIC_ORIGIN', 'http://localhost:8000').rstrip('/')
 SECURE = ORIGIN.startswith('https://')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '').strip()
+LOCAL_HOSTS = {'localhost', '127.0.0.1', '::1'}
 
 MASTERCLASSES = (
     ('masterclass_1', 'Мастер-класс 1'),
@@ -73,6 +74,17 @@ def qr_data_url(value):
     output = io.BytesIO()
     image.save(output, format='PNG')
     return 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode('ascii')
+
+def origin_allowed(value):
+    if value == ORIGIN:
+        return True
+    configured = urlparse(ORIGIN)
+    requested = urlparse(value or '')
+    if configured.scheme != 'http' or configured.hostname not in LOCAL_HOSTS:
+        return False
+    configured_port = configured.port or 80
+    requested_port = requested.port or 80
+    return requested.scheme == 'http' and requested.hostname in LOCAL_HOSTS and requested_port == configured_port
 
 @contextmanager
 def connect():
@@ -101,7 +113,7 @@ def init_db():
         columns = {r['name'] for r in db.execute('PRAGMA table_info(users)')}
         if 'email' in columns and 'login' not in columns:
             db.execute('ALTER TABLE users RENAME COLUMN email TO login')
-        for name, definition in [('role', "TEXT NOT NULL DEFAULT 'manager'"), ('active', 'INTEGER NOT NULL DEFAULT 1'), ('can_edit', 'INTEGER NOT NULL DEFAULT 1'), ('can_publish', 'INTEGER NOT NULL DEFAULT 1'), ('first_name', "TEXT NOT NULL DEFAULT ''"), ('last_name', "TEXT NOT NULL DEFAULT ''"), ('phone', "TEXT NOT NULL DEFAULT ''"), ('messenger_phone', "TEXT NOT NULL DEFAULT ''"), ('photo', "TEXT NOT NULL DEFAULT ''"), ('messengers', "TEXT NOT NULL DEFAULT '[]'")]:
+        for name, definition in [('role', "TEXT NOT NULL DEFAULT 'manager'"), ('active', 'INTEGER NOT NULL DEFAULT 1'), ('can_edit', 'INTEGER NOT NULL DEFAULT 1'), ('can_publish', 'INTEGER NOT NULL DEFAULT 1'), ('first_name', "TEXT NOT NULL DEFAULT ''"), ('last_name', "TEXT NOT NULL DEFAULT ''"), ('phone', "TEXT NOT NULL DEFAULT ''"), ('messenger_phone', "TEXT NOT NULL DEFAULT ''"), ('phone_extension', f"TEXT NOT NULL DEFAULT '{DEFAULT_MANAGER_EXTENSION}'"), ('photo', "TEXT NOT NULL DEFAULT ''"), ('messengers', "TEXT NOT NULL DEFAULT '[]'")]:
             if name not in columns:
                 db.execute(f'ALTER TABLE users ADD COLUMN {name} {definition}')
         link_columns = {r['name'] for r in db.execute('PRAGMA table_info(links)')}
@@ -116,7 +128,7 @@ def init_db():
             db.execute('DROP TABLE submissions')
             db.execute('ALTER TABLE submissions_v8 RENAME TO submissions')
         db.execute('CREATE INDEX IF NOT EXISTS submissions_link_id_idx ON submissions(link_id)')
-        db.execute('PRAGMA user_version=8')
+        db.execute('PRAGMA user_version=9')
         if not db.execute("SELECT 1 FROM users WHERE role='admin'").fetchone():
             insert_user(db, 'admin', secrets.token_urlsafe(32), role='admin')
 
@@ -141,7 +153,7 @@ def insert_user(db, login, password, role='manager', can_edit=True, can_publish=
     salt = secrets.token_hex(16)
     profile = manager_profile(profile or {})
     try:
-        db.execute('INSERT INTO users(id,login,salt,password,role,can_edit,can_publish,first_name,last_name,phone,messenger_phone,photo,messengers) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)', (uid, login, salt, password_hash(password, salt), role, int(can_edit), int(can_publish), profile['firstName'], profile['lastName'], profile['phone'], profile['messengerPhone'], profile['photo'], json.dumps(profile['messengers'], ensure_ascii=False)))
+        db.execute('INSERT INTO users(id,login,salt,password,role,can_edit,can_publish,first_name,last_name,phone,messenger_phone,phone_extension,photo,messengers) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (uid, login, salt, password_hash(password, salt), role, int(can_edit), int(can_publish), profile['firstName'], profile['lastName'], profile['phone'], profile['messengerPhone'], profile['extension'], profile['photo'], json.dumps(profile['messengers'], ensure_ascii=False)))
     except sqlite3.IntegrityError:
         raise Error(409, 'Пользователь с таким логином уже существует')
     return uid
@@ -166,7 +178,7 @@ def profile_from_row(row):
             messengers = []
     except (json.JSONDecodeError, TypeError):
         messengers = []
-    return {'firstName':row['first_name'], 'lastName':row['last_name'], 'phone':row['phone'], 'messengerPhone':row['messenger_phone'], 'photo':row['photo'], 'messengers':messengers}
+    return {'firstName':row['first_name'], 'lastName':row['last_name'], 'phone':row['phone'], 'messengerPhone':row['messenger_phone'], 'extension':row['phone_extension'], 'photo':row['photo'], 'messengers':messengers}
 
 def apply_manager_profile(p, row):
     profile = profile_from_row(row)
@@ -174,6 +186,7 @@ def apply_manager_profile(p, row):
     p['mopLastName'] = profile['lastName']
     p['mopPhone'] = profile['phone']
     p['mopMessengerPhone'] = profile['messengerPhone']
+    p['mopExtension'] = profile['extension']
     p['mopPhoto'] = profile['photo']
     p['mopMessengers'] = profile['messengers']
     return p
@@ -243,7 +256,7 @@ def route(env):
     now = int(time.time())
     data = {}
     if method in ('POST', 'PUT', 'DELETE'):
-        if env.get('HTTP_ORIGIN') != ORIGIN:
+        if not origin_allowed(env.get('HTTP_ORIGIN')):
             raise Error(403, 'Источник запроса не разрешён')
         size = int(env.get('CONTENT_LENGTH') or 0)
         if size > 500000:
@@ -334,7 +347,7 @@ def route(env):
             cookie = SimpleCookie()
             cookie.load(env.get('HTTP_COOKIE',''))
             token = cookie.get('ikp_session')
-            session = db.execute('SELECT s.*,u.login,u.role,u.can_edit,u.can_publish,u.first_name,u.last_name,u.phone,u.messenger_phone,u.photo,u.messengers FROM sessions s JOIN users u ON u.id=s.user_id WHERE token=? AND expires>? AND u.active=1', (digest(token.value) if token else '',now)).fetchone()
+            session = db.execute('SELECT s.*,u.login,u.role,u.can_edit,u.can_publish,u.first_name,u.last_name,u.phone,u.messenger_phone,u.phone_extension,u.photo,u.messengers FROM sessions s JOIN users u ON u.id=s.user_id WHERE token=? AND expires>? AND u.active=1', (digest(token.value) if token else '',now)).fetchone()
             if not session:
                 raise Error(401,'Войдите в панель менеджера')
             uid = session['user_id']
@@ -411,7 +424,7 @@ def route(env):
                         return {'id':target,'active':active,'can_edit':can_edit,'can_publish':can_publish}, []
                     if method == 'PUT' and len(parts) == 6 and parts[5] == 'profile':
                         profile = manager_profile(data.get('profile', {}))
-                        db.execute('UPDATE users SET first_name=?,last_name=?,phone=?,messenger_phone=?,photo=?,messengers=? WHERE id=?', (profile['firstName'],profile['lastName'],profile['phone'],profile['messengerPhone'],profile['photo'],json.dumps(profile['messengers'], ensure_ascii=False),target))
+                        db.execute('UPDATE users SET first_name=?,last_name=?,phone=?,messenger_phone=?,phone_extension=?,photo=?,messengers=? WHERE id=?', (profile['firstName'],profile['lastName'],profile['phone'],profile['messengerPhone'],profile['extension'],profile['photo'],json.dumps(profile['messengers'], ensure_ascii=False),target))
                         audit(db, uid, 'manager_profile_updated', target)
                         return {'id':target,'profile':profile}, []
                     if method == 'DELETE' and len(parts) == 5:

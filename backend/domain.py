@@ -9,6 +9,7 @@ HEALTH = [('quiz', 'Онлайн-анкетирование перед медо�
 ADDONS = [('lmk', 'Новый бланк личной медицинской книжки', 650), ('sanmin', 'Санминимум', 700), ('staph', 'Исследование на стафилококк', 500), ('typhoid', 'Исследование на брюшной тиф', 200), ('intest', 'Исследование на кишечную инфекцию', 200)]
 DEFAULT_MANAGER_PHONE = '+7 (863) 322-67-66'
 DEFAULT_MANAGER_MESSENGER_PHONE = '+7 (989) 506-74-60'
+DEFAULT_MANAGER_EXTENSION = '932'
 
 def integer(v, low=0, high=100000):
     if isinstance(v, bool) or not isinstance(v, int) or not low <= v <= high:
@@ -61,6 +62,9 @@ def manager_profile(data):
     profile = {k:string(data.get(k, ''), 150) for k in ('firstName','lastName')}
     profile['phone'] = string(data.get('phone', DEFAULT_MANAGER_PHONE), 150)
     profile['messengerPhone'] = string(data.get('messengerPhone', DEFAULT_MANAGER_MESSENGER_PHONE), 150)
+    profile['extension'] = string(data.get('extension', DEFAULT_MANAGER_EXTENSION), 10)
+    if profile['extension'] and (not profile['extension'].isascii() or not profile['extension'].isdigit()):
+        raise ValueError('Добавочный номер должен содержать только цифры')
     profile['photo'] = image_data(data.get('photo', ''))
     profile['messengers'] = messenger_accounts(data.get('messengers', []))
     return profile
@@ -111,7 +115,7 @@ def messenger_accounts(value):
     return result
 
 def proposal(data, publish=False):
-    p = {k: string(data.get(k, '')) for k in ['company', 'inn', 'lpr', 'mopFirstName', 'mopLastName', 'mopPhone', 'mopMessengerPhone']}
+    p = {k: string(data.get(k, '')) for k in ['company', 'inn', 'lpr', 'mopFirstName', 'mopLastName', 'mopPhone', 'mopMessengerPhone', 'mopExtension']}
     if p['inn'] and (not p['inn'].isascii() or not p['inn'].isdigit() or len(p['inn']) not in (10, 12)):
         raise ValueError('ИНН должен содержать 10 или 12 цифр')
     p['count'] = integer(data.get('count', 1), 1)

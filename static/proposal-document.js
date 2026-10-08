@@ -2,6 +2,7 @@ import {esc,rub,totals} from './shared.js';
 
 const DEFAULT_PHONE='+7 (863) 322-67-66';
 const DEFAULT_MESSENGER='+7 (989) 506-74-60';
+const DEFAULT_EXTENSION='932';
 const EXAM_COMPOSITION=[
   'Осмотр дерматовенеролога','Осмотр нарколога','Осмотр оториноларинголога','Осмотр психиатра',
   'Осмотр стоматолога','Осмотр терапевта','Осмотр акушера-гинеколога','Осмотр хирурга',
@@ -43,6 +44,8 @@ export function buildProposalDocument(p,s,catalog,assetRoot='',options={}){
   const manager=[p.mopFirstName,p.mopLastName].filter(Boolean).join(' ')||'Персональный менеджер';
   const phone=p.mopPhone||DEFAULT_PHONE;
   const messenger=p.mopMessengerPhone||DEFAULT_MESSENGER;
+  const extension=Object.hasOwn(p,'mopExtension')?p.mopExtension:DEFAULT_EXTENSION;
+  const extensionText=extension?` доб. ${esc(extension)}`:'';
   const perEmployee=t.total/(s.count||1);
   const preparedDate=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',year:'numeric'}).format(new Date());
   const aiIsFree=Boolean(s.health?.aiAssist?.on)&&Number(p.health?.aiAssist?.price||0)===0;
@@ -78,7 +81,7 @@ export function buildProposalDocument(p,s,catalog,assetRoot='',options={}){
 
     <section><h2>Смета</h2><table class="estimate"><tbody><tr><td>Медицинский осмотр (${s.count.toLocaleString('ru-RU')} чел. × ${Math.round(p.basePrice).toLocaleString('ru-RU')} руб.)</td><td>${rub(t.base)}</td></tr><tr><td>Дополнительные услуги к медосмотру</td><td>${rub(t.addons)}</td></tr><tr><td>Корпоративные преимущества</td><td>${rub(t.corp)}</td></tr><tr><td>Здоровье сотрудников</td><td>${rub(t.health)}</td></tr><tr class="total"><td>Итого по предложению</td><td>${rub(t.total)}</td></tr><tr class="per-person"><td>Стоимость на одного сотрудника</td><td>${rub(perEmployee)}</td></tr></tbody></table></section>
 
-    <section class="contacts"><h2>Контакты и реквизиты</h2><div class="contacts-grid"><div><p><strong>ГК «Человек» · Корпоративная медицина</strong></p><p>344065, г. Ростов-на-Дону, ул. 50-летия Ростсельмаша, зд. 6в, этаж 3, помещ. 9А</p><p>Тел.: +7 (863) 322-67-66, +7 (863) 322-69-79 доб. 932</p><p>Email: sales-q-team@chelovekmed.ru · Telegram: t.me/gkchelovek</p><p>ИНН 6166083531, КПП 616601001 · Лицензия № Л041-01050-61/00339366 от 03.10.2018 г.</p></div><div><p><strong>Персональный менеджер: ${esc(manager)}</strong></p><p>${esc(phone)}</p><p>Telegram / MAX: ${esc(messenger)}</p></div></div></section>
+    <section class="contacts"><h2>Контакты и реквизиты</h2><div class="contacts-grid"><div><p><strong>ГК «Человек» · Корпоративная медицина</strong></p><p>344065, г. Ростов-на-Дону, ул. 50-летия Ростсельмаша, зд. 6в, этаж 3, помещ. 9А</p><p>Тел.: +7 (863) 322-67-66, +7 (863) 322-69-79${extensionText}</p><p>Email: sales-q-team@chelovekmed.ru · Telegram: t.me/gkchelovek</p><p>ИНН 6166083531, КПП 616601001 · Лицензия № Л041-01050-61/00339366 от 03.10.2018 г.</p></div><div><p><strong>Персональный менеджер: ${esc(manager)}</strong></p><p>${esc(phone)}</p><p>Telegram / MAX: ${esc(messenger)}</p></div></div></section>
 
     <section class="cta"><h3>Готовы зафиксировать цену и согласовать даты выезда?</h3><p><strong>Персональный менеджер: ${esc(manager)}.</strong> Позвоните или напишите прямо сейчас — менеджер ответит на все вопросы и подготовит договор. <strong>Условия данного коммерческого предложения действительны в течение 1 месяца.</strong></p></section><div class="signature"><div class="signature-greeting">С уважением<br>и наилучшими пожеланиями,<br>Группа компаний «Человек»</div><div class="signature-mark"><img src="${esc(assetRoot)}/static/signature-larisa.png" alt="Подпись Ларисы Захарченко"></div><div class="sales-signature"><span>Руководитель отдела продаж</span><strong>Лариса Захарченко</strong></div><p class="signature-date">Дата формирования ИКП: ${esc(preparedDate)}</p></div>
 
