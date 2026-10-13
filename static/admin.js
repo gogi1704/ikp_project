@@ -1,5 +1,5 @@
 import {$,esc,date,rub,api,setCsrf,notify,field,messengerFields,wireMessengerFields,readMessengerFields,submissionDetail,linkActions,wireLinkCopyButtons,proposalSelection} from './shared.js';
-import {openProposalDocument} from './proposal-document.js?v=20';
+import {openProposalDocument} from './proposal-document.js?v=21';
 import {openMasterclassQr} from './masterclass-qr.js?v=1';
 const app=$('#app');
 let managers=[], activityGroups=[], activityCatalog=null;
