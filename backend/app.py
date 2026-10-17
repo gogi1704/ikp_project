@@ -116,6 +116,11 @@ def init_db():
         for name, definition in [('role', "TEXT NOT NULL DEFAULT 'manager'"), ('active', 'INTEGER NOT NULL DEFAULT 1'), ('can_edit', 'INTEGER NOT NULL DEFAULT 1'), ('can_publish', 'INTEGER NOT NULL DEFAULT 1'), ('first_name', "TEXT NOT NULL DEFAULT ''"), ('last_name', "TEXT NOT NULL DEFAULT ''"), ('phone', "TEXT NOT NULL DEFAULT ''"), ('messenger_phone', "TEXT NOT NULL DEFAULT ''"), ('phone_extension', f"TEXT NOT NULL DEFAULT '{DEFAULT_MANAGER_EXTENSION}'"), ('photo', "TEXT NOT NULL DEFAULT ''"), ('messengers', "TEXT NOT NULL DEFAULT '[]'")]:
             if name not in columns:
                 db.execute(f'ALTER TABLE users ADD COLUMN {name} {definition}')
+        session_columns = {r['name'] for r in db.execute('PRAGMA table_info(sessions)')}
+        if 'admin_user_id' not in session_columns:
+            db.execute('ALTER TABLE sessions ADD COLUMN admin_user_id TEXT')
+        if 'manager_user_id' not in session_columns:
+            db.execute('ALTER TABLE sessions ADD COLUMN manager_user_id TEXT')
         link_columns = {r['name'] for r in db.execute('PRAGMA table_info(links)')}
         if 'plain_token' not in link_columns:
             db.execute('ALTER TABLE links ADD COLUMN plain_token TEXT')
@@ -131,6 +136,8 @@ def init_db():
         db.execute('PRAGMA user_version=9')
         if not db.execute("SELECT 1 FROM users WHERE role='admin'").fetchone():
             insert_user(db, 'admin', secrets.token_urlsafe(32), role='admin')
+        db.execute("UPDATE sessions SET admin_user_id=user_id WHERE admin_user_id IS NULL AND user_id IN (SELECT id FROM users WHERE role='admin')")
+        db.execute("UPDATE sessions SET manager_user_id=user_id WHERE manager_user_id IS NULL AND user_id IN (SELECT id FROM users WHERE role='manager')")
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
@@ -169,7 +176,14 @@ def permissions(data):
     return values
 
 def identity(row):
-    return {'login':row['login'], 'csrf':row['csrf'], 'role':row['role'], 'can_edit':bool(row['can_edit']), 'can_publish':bool(row['can_publish']), 'profile':profile_from_row(row)}
+    keys = row.keys()
+    return {
+        'login':row['login'], 'csrf':row['csrf'], 'role':row['role'],
+        'can_edit':bool(row['can_edit']), 'can_publish':bool(row['can_publish']),
+        'canSwitchAdmin':bool(row['admin_user_id']) if 'admin_user_id' in keys else False,
+        'canSwitchManager':bool(row['manager_user_id']) if 'manager_user_id' in keys else False,
+        'profile':profile_from_row(row),
+    }
 
 def profile_from_row(row):
     try:
@@ -310,9 +324,14 @@ def route(env):
                 u = fresh
             token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
             db.execute('DELETE FROM sessions WHERE expires<?', (now,))
-            db.execute('INSERT INTO sessions VALUES(?,?,?,?)', (digest(token),u['id'],csrf,now+28800))
+            admin_user_id = u['id'] if u['role'] == 'admin' else None
+            manager_user_id = u['id'] if u['role'] == 'manager' else None
+            db.execute(
+                'INSERT INTO sessions(token,user_id,csrf,expires,admin_user_id,manager_user_id) VALUES(?,?,?,?,?,?)',
+                (digest(token),u['id'],csrf,now+28800,admin_user_id,manager_user_id),
+            )
             audit(db,u['id'],'login',u['id'])
-            return identity(dict(u) | {'csrf':csrf}), [('Set-Cookie',f'ikp_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800'+('; Secure' if SECURE else ''))]
+            return identity(dict(u) | {'csrf':csrf, 'admin_user_id':admin_user_id, 'manager_user_id':manager_user_id}), [('Set-Cookie',f'ikp_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800'+('; Secure' if SECURE else ''))]
         if path.startswith('/api/public/'):
             parts = path.split('/')
             token = parts[3]
@@ -358,6 +377,45 @@ def route(env):
             if path == '/api/logout' and method == 'POST':
                 db.execute('DELETE FROM sessions WHERE token=?',(session['token'],))
                 return {}, [('Set-Cookie','ikp_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')]
+            if path == '/api/switch/manager' and method == 'POST':
+                if session['role'] != 'admin':
+                    raise Error(403, 'Переключиться может только администратор')
+                manager = None
+                if session['manager_user_id']:
+                    manager = db.execute("SELECT * FROM users WHERE id=? AND role='manager' AND active=1", (session['manager_user_id'],)).fetchone()
+                if not manager:
+                    login = str(data.get('login', '')).lower().strip()
+                    password = str(data.get('password', ''))
+                    if not login or not password:
+                        raise Error(409, 'Войдите под аккаунтом менеджера')
+                    attempt_key = digest(env.get('REMOTE_ADDR', 'unknown') + ':manager-switch')
+                    db.execute('DELETE FROM attempts WHERE reset<?', (now,))
+                    attempt = db.execute('SELECT * FROM attempts WHERE key=?', (attempt_key,)).fetchone()
+                    if attempt and attempt['count'] >= 10:
+                        raise Error(429, 'Слишком много попыток. Повторите через 15 минут')
+                    manager = db.execute("SELECT * FROM users WHERE login=? AND role='manager'", (login,)).fetchone()
+                    salt = manager['salt'] if manager else '00'*16
+                    candidate = password_hash(password, salt)
+                    if not manager or not hmac.compare_digest(candidate, manager['password']) or not manager['active']:
+                        db.execute('INSERT INTO attempts VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1', (attempt_key, now + 900))
+                        db.commit()
+                        raise Error(401, 'Неверный логин или пароль менеджера')
+                    db.execute('DELETE FROM attempts WHERE key=?', (attempt_key,))
+                csrf = secrets.token_urlsafe(32)
+                admin_user_id = session['admin_user_id'] or session['user_id']
+                db.execute('UPDATE sessions SET user_id=?,admin_user_id=?,manager_user_id=?,csrf=? WHERE token=?', (manager['id'],admin_user_id,manager['id'],csrf,session['token']))
+                audit(db,admin_user_id,'switched_to_manager',manager['id'])
+                return identity(dict(manager) | {'csrf':csrf, 'admin_user_id':admin_user_id, 'manager_user_id':manager['id']}), []
+            if path == '/api/switch/admin' and method == 'POST':
+                if session['role'] != 'manager' or not session['admin_user_id']:
+                    raise Error(403, 'Администратор не привязан к этой сессии')
+                admin = db.execute("SELECT * FROM users WHERE id=? AND role='admin' AND active=1", (session['admin_user_id'],)).fetchone()
+                if not admin:
+                    raise Error(401, 'Сессия администратора завершена')
+                csrf = secrets.token_urlsafe(32)
+                db.execute('UPDATE sessions SET user_id=?,csrf=? WHERE token=?', (admin['id'],csrf,session['token']))
+                audit(db,admin['id'],'switched_to_admin',session['manager_user_id'] or session['user_id'])
+                return identity(dict(admin) | {'csrf':csrf, 'admin_user_id':admin['id'], 'manager_user_id':session['manager_user_id']}), []
             if path == '/api/masterclasses' and method == 'GET':
                 return {'items':[{'code':code, 'name':name} for code, name in MASTERCLASSES]}, []
             if path == '/api/masterclasses/qr' and method == 'POST':
@@ -419,7 +477,7 @@ def route(env):
                     if method == 'PUT' and len(parts) == 5:
                         active, can_edit, can_publish = permissions(data)
                         db.execute('UPDATE users SET active=?,can_edit=?,can_publish=? WHERE id=?', (int(active),int(can_edit),int(can_publish),target))
-                        db.execute('DELETE FROM sessions WHERE user_id=?', (target,))
+                        db.execute('DELETE FROM sessions WHERE user_id=? OR manager_user_id=?', (target,target))
                         audit(db, uid, f'manager_access:{int(active)}:{int(can_edit)}:{int(can_publish)}', target)
                         return {'id':target,'active':active,'can_edit':can_edit,'can_publish':can_publish}, []
                     if method == 'PUT' and len(parts) == 6 and parts[5] == 'profile':
@@ -437,7 +495,7 @@ def route(env):
                                 db.execute(f'DELETE FROM submissions WHERE link_id IN ({link_placeholders})', link_ids)
                             db.execute(f'DELETE FROM links WHERE proposal_id IN ({placeholders})', proposal_ids)
                             db.execute(f'DELETE FROM proposals WHERE id IN ({placeholders})', proposal_ids)
-                        db.execute('DELETE FROM sessions WHERE user_id=?', (target,))
+                        db.execute('DELETE FROM sessions WHERE user_id=? OR manager_user_id=?', (target,target))
                         db.execute('DELETE FROM users WHERE id=?', (target,))
                         audit(db, uid, 'manager_deleted', target)
                         return {}, []
@@ -445,7 +503,7 @@ def route(env):
                         validate_credentials(user['login'], data.get('password'))
                         salt = secrets.token_hex(16)
                         db.execute('UPDATE users SET salt=?,password=? WHERE id=?', (salt,password_hash(data['password'],salt),target))
-                        db.execute('DELETE FROM sessions WHERE user_id=?', (target,))
+                        db.execute('DELETE FROM sessions WHERE user_id=? OR manager_user_id=?', (target,target))
                         audit(db, uid, 'manager_password_reset', target)
                         return {}, []
                 raise Error(404, 'Страница не найдена')

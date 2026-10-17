@@ -9,11 +9,35 @@ function login(){
   app.innerHTML=`<section class="login card"><span class="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</span><h1>Вход для менеджера</h1><p class="muted">Подготовка предложений и заявки предприятий</p><form id="login">${field('login','Логин','','text','required autocomplete="username"')}${field('password','Пароль','','password','required autocomplete="current-password"')}<p id="login-error" class="error" role="alert"></p><button class="primary">Войти</button></form></section>`;
   $('#login').onsubmit=async e=>{e.preventDefault(); const b=e.target.querySelector('button'); b.disabled=true;try{const me=await api('/api/login','POST',Object.fromEntries(new FormData(e.target)));setCsrf(me.csrf);await start(me);}catch(err){$('#login-error').textContent=err.message;}finally{b.disabled=false;}};
 }
+function linkedManagerLogin(me,message=''){
+  $('#account').innerHTML=`<span class="role-switch" aria-label="Режим панели"><a href="/admin">Администратор</a><b>Менеджер</b></span><span>${esc(me.login)}</span>`;
+  app.innerHTML=`<section class="login card"><span class="eyebrow">ПЕРВОЕ ПЕРЕКЛЮЧЕНИЕ</span><h1>Войдите под менеджером</h1><p class="muted">Укажите аккаунт конкретного менеджера. После первого входа вы сможете переключаться между панелями без повторного пароля.</p><form id="linked-manager-login">${field('login','Логин менеджера','','text','required autocomplete="username"')}${field('password','Пароль менеджера','','password','required autocomplete="current-password"')}<p id="login-error" class="error" role="alert">${esc(message)}</p><button class="primary">Войти как менеджер</button></form><a class="secondary login-back" href="/admin">Вернуться в админ-панель</a></section>`;
+  $('#linked-manager-login').onsubmit=async event=>{
+    event.preventDefault();
+    const button=event.target.querySelector('button');button.disabled=true;
+    try{
+      const switched=await api('/api/switch/manager','POST',Object.fromEntries(new FormData(event.target)));
+      history.replaceState(null,'','/manager');
+      await start(switched);
+    }catch(error){$('#login-error').textContent=error.message;button.disabled=false;}
+  };
+}
 async function start(me){
-  if(me.role==='admin'){location.replace('/admin');return;}
+  setCsrf(me.csrf);
+  if(me.role==='admin'){
+    if(new URLSearchParams(location.search).get('mode')!=='manager'){location.replace('/admin');return;}
+    try{
+      const switched=await api('/api/switch/manager','POST',{});
+      history.replaceState(null,'','/manager');
+      await start(switched);
+    }catch(error){if(error.status===409)linkedManagerLogin(me);else app.textContent=error.message;}
+    return;
+  }
   rights=me;
-  setCsrf(me.csrf);catalog=await api('/static/catalog.json');rows=await api('/api/proposals');
-  $('#account').innerHTML=`<button class="header-button activity-header-button" id="global-activity">Ссылки и заявки <b id="activity-summary"></b></button><span>${esc(me.login)}</span> <button class="header-button" id="logout">Выйти</button>`;
+  catalog=await api('/static/catalog.json');rows=await api('/api/proposals');
+  const roleSwitch=me.canSwitchAdmin?'<span class="role-switch" aria-label="Режим панели"><button type="button" id="switch-admin">Администратор</button><b>Менеджер</b></span>':'';
+  $('#account').innerHTML=`<button class="header-button activity-header-button" id="global-activity">Ссылки и заявки <b id="activity-summary"></b></button>${roleSwitch}<span>${esc(me.login)}</span> <button class="header-button" id="logout">Выйти</button>`;
+  if(me.canSwitchAdmin)$('#switch-admin').onclick=async()=>{if(dirty&&!confirm('Переключиться без сохранения изменений?'))return;await api('/api/switch/admin','POST',{});dirty=false;location.replace('/admin');};
   $('#logout').onclick=async()=>{if(dirty&&!confirm('Выйти без сохранения изменений?'))return;await api('/api/logout','POST');dirty=false;location.reload();};
   current=rows[0]||null;render();
 }

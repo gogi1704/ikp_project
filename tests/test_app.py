@@ -407,6 +407,39 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.call('/api/login','POST',{'password':'long-test-password'})[0],401)
         self.assertEqual(self.call('/api/login','POST',{'login':'manager@example.test','password':'long-test-password'})[0],200)
 
+    def test_admin_and_manager_panels_include_role_switch(self):
+        admin_source=(app.ROOT/'static'/'admin.js').read_text(encoding='utf-8')
+        manager_source=(app.ROOT/'static'/'manager.js').read_text(encoding='utf-8')
+        shared_source=(app.ROOT/'static'/'shared.js').read_text(encoding='utf-8')
+        self.assertIn('/manager?mode=manager',admin_source)
+        self.assertIn('/api/switch/manager',manager_source)
+        self.assertIn('/api/switch/admin',manager_source)
+        self.assertIn('credentials:\'include\'',shared_source)
+
+    def test_admin_links_and_reuses_specific_manager_account(self):
+        self.admin_login()
+        self.assertEqual(self.call('/api/switch/manager','POST')[0],409)
+        status,manager=self.call('/api/switch/manager','POST',{
+            'login':'manager@example.test','password':'long-test-password',
+        })
+        self.assertEqual(status,200)
+        self.assertEqual(manager['role'],'manager')
+        self.assertEqual(manager['login'],'manager@example.test')
+        self.assertTrue(manager['canSwitchAdmin'])
+        status,created=self.call('/api/proposals','POST',{'company':'ООО Связанный менеджер'})
+        self.assertEqual(status,200)
+        status,admin=self.call('/api/switch/admin','POST')
+        self.assertEqual(status,200)
+        self.assertEqual(admin['role'],'admin')
+        self.assertTrue(admin['canSwitchManager'])
+        self.assertEqual(self.call('/api/proposals')[0],403)
+        status,manager=self.call('/api/switch/manager','POST')
+        self.assertEqual(status,200)
+        self.assertEqual(manager['login'],'manager@example.test')
+        self.assertEqual(self.call('/api/proposals')[1][0]['id'],created['id'])
+        self.assertEqual(self.call('/api/logout','POST')[0],200)
+        self.assertEqual(self.call('/api/me')[0],401)
+
     def test_disable_and_password_reset_revoke_sessions(self):
         manager_cookie,manager_csrf=self.cookie,self.csrf
         self.admin_login()

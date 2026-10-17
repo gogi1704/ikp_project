@@ -5,7 +5,8 @@ export const date = v => new Date(v*1000).toLocaleDateString('ru-RU');
 let csrf = '';
 export function setCsrf(v){ csrf = v; }
 export async function api(path, method='GET', data){
-  const r = await fetch(path,{method,credentials:'same-origin',headers:method==='GET'?{}:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:method==='GET'?undefined:JSON.stringify(data??{})});
+  const endpoint=new URL(path,location.origin);
+  const r = await fetch(endpoint,{method,credentials:'include',headers:method==='GET'?{}:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:method==='GET'?undefined:JSON.stringify(data??{})});
   const body = await r.json();
   if(!r.ok){ const e=new Error(body.error||'Не удалось выполнить запрос'); e.status=r.status; throw e; }
   return body;
