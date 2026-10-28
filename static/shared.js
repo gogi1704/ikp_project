@@ -55,6 +55,31 @@ export function linkActions(link){
 export function wireLinkCopyButtons(root=document){
   root.querySelectorAll('[data-copy-link]').forEach(button=>button.onclick=async()=>{try{await navigator.clipboard.writeText(button.dataset.copyLink);notify('Ссылка скопирована');}catch{notify('Не удалось скопировать ссылку');}});
 }
+export const activityMetricLabels={sent:'Направлено ИКП',viewed:'Просмотрено',unviewed:'Не просмотрено',applications:'Заявки'};
+export function activityMetricCount(groups,metric){
+  return groups.reduce((total,group)=>{
+    if(metric==='sent')return total+group.links.length;
+    if(metric==='viewed')return total+group.links.filter(link=>link.viewed).length;
+    if(metric==='unviewed')return total+group.links.filter(link=>!link.viewed).length;
+    if(metric==='applications')return total+group.submissions.length;
+    return total;
+  },0);
+}
+export function activityStatsHtml(groups,extra=''){
+  return `<div class="activity-stats">${Object.entries(activityMetricLabels).map(([metric,label])=>`<button type="button" class="activity-stat activity-stat-${metric}" data-activity-metric="${metric}" ${extra}><span>${esc(label)}</span><strong>${activityMetricCount(groups,metric)}</strong><small>Показать предприятия</small></button>`).join('')}</div>`;
+}
+export function activityCompanyListHtml(groups,metric,{showManager=false}={}){
+  const rows=groups.map(group=>{
+    const links=metric==='viewed'?group.links.filter(link=>link.viewed):metric==='unviewed'?group.links.filter(link=>!link.viewed):group.links;
+    const items=metric==='applications'?group.submissions:links;
+    if(!items.length)return '';
+    const latest=Math.max(...items.map(item=>Number(metric==='viewed'?item.viewed:item.created)||0));
+    const revoked=metric==='unviewed'?items.filter(item=>item.revoked).length:0;
+    const detail=metric==='sent'?`${items.length} ${items.length===1?'ссылка':'ссылок'} · последняя ${date(latest)}`:metric==='viewed'?`${items.length} ${items.length===1?'просмотр':'просмотров'} · последний ${date(latest)}`:metric==='unviewed'?`${items.length} ${items.length===1?'ссылка не просмотрена':'ссылок не просмотрено'} · последняя отправлена ${date(latest)}${revoked?` · отозвано: ${revoked}`:''}`:`${items.length} ${items.length===1?'заявка':'заявок'} · последняя ${date(latest)}`;
+    return `<article class="activity-company-row"><div><h3>${esc(group.company||'Предложение без названия')}</h3><p>${group.inn?`ИНН ${esc(group.inn)}`:'ИНН не указан'}${group.lpr?` · Для ${esc(group.lpr)}`:''}</p>${showManager?`<small>Менеджер: ${esc(group.ownerName||group.ownerLogin||'Не указан')}</small>`:''}</div><div class="activity-company-result"><strong>${items.length}</strong><span>${esc(detail)}</span></div></article>`;
+  }).filter(Boolean).join('');
+  return rows||'<section class="empty activity-company-empty"><h3>Предприятий нет</h3><p class="muted">Для выбранного показателя пока нет данных.</p></section>';
+}
 export function optionDetails(o,includeLink=false){return `${o.spoiler?`<p class="option-description">${esc(o.spoiler)}</p>`:''}${includeLink&&o.link?`<a class="service-download" href="${esc(o.link.href)}" download="${esc(o.link.download||'')}"><span aria-hidden="true">↓</span>${esc(o.link.text)}</a>`:''}${o.consiliumTrial?'<small class="consilium-trial-note">После отправки заявки вы получите персональную ссылку на пятидневный тестовый доступ к сервису «Консилиум».</small>':''}`;}
 const messengerTypes=[['telegram','Telegram'],['whatsapp','WhatsApp'],['max','MAX'],['other','Другая ссылка']];
 function messengerRow(item={type:'telegram',value:''}){return `<div class="messenger-edit-row"><select aria-label="Мессенджер">${messengerTypes.map(([value,label])=>`<option value="${value}" ${item.type===value?'selected':''}>${label}</option>`).join('')}</select><input type="text" value="${esc(item.value||'')}" maxlength="300" placeholder="@имя, номер или ссылка" aria-label="Аккаунт или ссылка"><button type="button" class="messenger-remove" aria-label="Удалить мессенджер">×</button></div>`;}

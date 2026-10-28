@@ -86,6 +86,7 @@ class AppTests(unittest.TestCase):
         overview=self.call('/api/activity')[1]
         self.assertEqual((overview['linkCount'],overview['submissionCount']),(1,2))
         self.assertEqual(overview['proposals'][0]['id'],p['id'])
+        self.assertEqual(overview['proposals'][0]['inn'],p['body']['inn'])
         self.assertEqual({item['id'] for item in overview['proposals'][0]['submissions']},{result['receipt'],repeated['receipt']})
         self.assertEqual(overview['proposals'][0]['submissions'][0]['proposal']['basePrice'],2500)
 
@@ -153,6 +154,8 @@ class AppTests(unittest.TestCase):
             '/static/masterclass-qr.js':('text/javascript',b'openMasterclassQr'),
             '/static/proposal-document.css':('text/css',b'.print-toolbar'),
             '/static/signature-larisa.png':('image/png',b'\x89PNG'),
+            '/static/signature-dudina.png':('image/png',b'\x89PNG'),
+            '/static/seal-chelovek.png':('image/png',b'\x89PNG'),
             '/static/vendor/html2canvas.min.js':('text/javascript',b'html2canvas'),
             '/static/vendor/jspdf.umd.min.js':('text/javascript',b'jsPDF'),
         }

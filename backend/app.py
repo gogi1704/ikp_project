@@ -286,7 +286,7 @@ def route(env):
         return (ROOT / 'static' / 'admin.html').read_bytes(), [('Content-Type', 'text/html; charset=utf-8')]
     if method == 'GET' and path.startswith('/p/'):
         return (ROOT / 'static' / 'client.html').read_bytes(), [('Content-Type', 'text/html; charset=utf-8')]
-    if method == 'GET' and path in ['/static/app.css', '/static/proposal-document.css', '/static/shared.js', '/static/manager.js', '/static/client.js', '/static/proposal-document.js', '/static/masterclass-qr.js', '/static/vendor/html2canvas.min.js', '/static/vendor/jspdf.umd.min.js', '/static/admin.js', '/static/catalog.json', '/static/logo.png', '/static/signature-larisa.png', '/static/corporate-care.mp4', '/static/materials/onco-assistance.pptx', '/static/materials/corporate-checkups-price.xlsx']:
+    if method == 'GET' and path in ['/static/app.css', '/static/proposal-document.css', '/static/shared.js', '/static/manager.js', '/static/client.js', '/static/proposal-document.js', '/static/masterclass-qr.js', '/static/vendor/html2canvas.min.js', '/static/vendor/jspdf.umd.min.js', '/static/admin.js', '/static/catalog.json', '/static/logo.png', '/static/signature-larisa.png', '/static/signature-dudina.png', '/static/seal-chelovek.png', '/static/corporate-care.mp4', '/static/materials/onco-assistance.pptx', '/static/materials/corporate-checkups-price.xlsx']:
         ext = Path(path).suffix
         return (ROOT / path.lstrip('/')).read_bytes(), [('Content-Type', {'.css':'text/css', '.js':'text/javascript', '.json':'application/json', '.png':'image/png', '.mp4':'video/mp4', '.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}[ext])]
     with connect() as db:
@@ -525,7 +525,7 @@ def route(env):
                     submissions = [submission_from_row(item) for item in db.execute('SELECT s.*,l.snapshot AS proposal_snapshot FROM submissions s JOIN links l ON s.link_id=l.id WHERE l.proposal_id=? ORDER BY s.created DESC', (row['id'],))]
                     link_count += len(links)
                     submission_count += len(submissions)
-                    groups.append({'id':row['id'],'company':body.get('company',''),'lpr':body.get('lpr',''),'created':row['created'],'updated':row['updated'],'links':links,'submissions':submissions})
+                    groups.append({'id':row['id'],'company':body.get('company',''),'inn':body.get('inn',''),'lpr':body.get('lpr',''),'created':row['created'],'updated':row['updated'],'links':links,'submissions':submissions})
                 return {'proposals':groups,'linkCount':link_count,'submissionCount':submission_count}, []
             if path.startswith('/api/proposals') and method != 'GET':
                 publishing = path.endswith(('/publish', '/revoke'))

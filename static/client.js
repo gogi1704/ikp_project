@@ -1,5 +1,5 @@
 import {$,esc,date,api,notify,field,totals,sumHtml,optionDetails} from './shared.js';
-import {openProposalDocument} from './proposal-document.js?v=21';
+import {openProposalDocument} from './proposal-document.js?v=22';
 const METRIKA_ID=112717373;
 (function(m,e,t,r,i,k,a){
   m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
